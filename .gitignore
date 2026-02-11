@@ -1,0 +1,25 @@
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Root env
+.env
+
+# Backend
+backend/.env
+backend/vendor/
+backend/storage/
+backend/public/storage
+backend/bootstrap/cache/
+
+# Frontend
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+frontend/.env
+frontend/.turbo/
+
+# Old backup
+backend-mvp/

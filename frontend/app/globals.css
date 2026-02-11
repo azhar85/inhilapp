@@ -1,0 +1,31 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-start: #f7f3ef;
+  --bg-end: #e6eef5;
+  --ink: #111111;
+  --brand: #0f766e;
+  --sun: #f59e0b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  color: var(--ink);
+  font-family: 'Sora', sans-serif;
+  background: radial-gradient(1200px 500px at 10% -10%, #fff7e6 0%, transparent 60%),
+    radial-gradient(1200px 500px at 110% 10%, #e1f3ff 0%, transparent 55%),
+    linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
+}
+
+input,
+textarea,
+button {
+  font-family: inherit;
+}
