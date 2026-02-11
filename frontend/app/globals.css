@@ -29,3 +29,33 @@ textarea,
 button {
   font-family: inherit;
 }
+
+button,
+a,
+[role='button'] {
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+  transform-origin: center;
+}
+
+button:active,
+a:active,
+[role='button']:active {
+  transform: scale(0.98);
+}
+
+@media (hover: hover) {
+  button:hover,
+  a:hover,
+  [role='button']:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  a,
+  [role='button'] {
+    transition: none;
+  }
+}
