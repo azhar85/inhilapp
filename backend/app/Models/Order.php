@@ -9,6 +9,10 @@ class Order extends Model
 {
     use HasFactory;
 
+    protected $attributes = [
+        'status' => 'PENDING_PAYMENT',
+    ];
+
     protected $fillable = [
         'order_code',
         'customer_name',
