@@ -174,7 +174,7 @@ export default function HomePage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-semibold text-ink">Katalog Aplikasi</h2>
-                      </div>
+          </div>
         </div>
 
         {loading && (
@@ -208,6 +208,48 @@ export default function HomePage() {
           </div>
         )}
       </section>
-        </main>
+
+      <footer className="mt-16 pb-10">
+        <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-soft">
+          <div className="grid gap-6 sm:grid-cols-[1.2fr_1fr]">
+            <div>
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                InhilApp
+              </div>
+              <p className="mt-3 text-sm text-slate-600">
+                Katalog premium digital dengan proses cepat dan aman melalui
+                WhatsApp. Simpan ID order untuk pelacakan.
+              </p>
+              <div className="mt-4 text-xs text-slate-400">
+                (c) {new Date().getFullYear()} InhilApp. All rights reserved.
+              </div>
+            </div>
+            <div className="sm:justify-self-end">
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                Kontak
+              </div>
+              <div className="mt-3 flex flex-col gap-2 text-sm font-semibold text-ink/70">
+                <a
+                  href="https://instagram.com/inhilapp"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="transition hover:text-ink"
+                >
+                  Instagram @inhilapp
+                </a>
+                <a
+                  href="https://wa.me/6285187715318"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="transition hover:text-ink"
+                >
+                  WhatsApp 085187715318
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </main>
   );
 }

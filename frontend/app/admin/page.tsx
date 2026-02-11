@@ -118,6 +118,7 @@ export default function AdminPage() {
   const [orderStatus, setOrderStatus] = useState('Semua');
   const [orderModal, setOrderModal] = useState<Order | null>(null);
   const [orderPage, setOrderPage] = useState(1);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [showProductModal, setShowProductModal] = useState(false);
   const [isEditingProduct, setIsEditingProduct] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState(false);
@@ -125,6 +126,7 @@ export default function AdminPage() {
   const [showStockModal, setShowStockModal] = useState(false);
   const [isEditingStock, setIsEditingStock] = useState(false);
   const [stockDetail, setStockDetail] = useState<Stock | null>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const filterActiveProducts = (items: Product[]) =>
     items.filter((item) => item.is_active !== false);
 
@@ -711,6 +713,21 @@ export default function AdminPage() {
     if (value === null || value === undefined || value === '') return '-';
     return String(value);
   };
+  const orderStatusLabels: Record<string, string> = {
+    PENDING_PAYMENT: 'pending',
+    PAID: 'paid',
+    DELIVERED: 'delivered',
+    INVALID_PAYMENT: 'invalid',
+    REFUND: 'refund',
+  };
+  const orderStatusOptions = Object.keys(orderStatusLabels);
+  const formatOrderStatus = (status?: string | null) => {
+    if (!status) return '-';
+    return (
+      orderStatusLabels[status] ??
+      status.toLowerCase().replace(/_/g, ' ')
+    );
+  };
   const isStockActive = (stock: Stock) => Boolean(stock.is_active);
   const stockProductLabel = useMemo(() => {
     if (!stockForm.product_id) {
@@ -824,7 +841,7 @@ export default function AdminPage() {
             ))}
             <button
               type="button"
-              onClick={handleLogout}
+              onClick={() => setShowLogoutConfirm(true)}
               className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600"
             >
               Logout
@@ -900,12 +917,11 @@ export default function AdminPage() {
                 className="rounded-full border border-slate-200 px-4 py-2 text-sm"
               >
                 <option value="Semua">Semua</option>
-                <option value="PENDING_PAYMENT">PENDING_PAYMENT</option>
-                <option value="PAID">PAID</option>
-                <option value="DELIVERED">DELIVERED</option>
-                <option value="CANCELLED">CANCELLED</option>
-                <option value="INVALID_PAYMENT">INVALID_PAYMENT</option>
-                <option value="REFUND">REFUND</option>
+                {orderStatusOptions.map((status) => (
+                  <option key={`filter-${status}`} value={status}>
+                    {formatOrderStatus(status)}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -917,15 +933,18 @@ export default function AdminPage() {
                   key={order.id}
                   type="button"
                   onClick={() => setOrderModal({ ...order })}
-                  className="grid w-full gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-slate-300 sm:grid-cols-[1.2fr_0.8fr]"
+                  className="grid w-full gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-slate-300 sm:grid-cols-[1.2fr_0.9fr_0.7fr]"
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-ink">
                       {order.order_code ?? 'Belum ada ID'}
                     </div>
                     <div className="text-xs text-slate-400">
-                      {formatDateOnly(order.created_at)}
+                      {formatDateTime(order.created_at)}
                     </div>
+                  </div>
+                  <div className="text-xs font-semibold text-slate-600 sm:text-center">
+                    {formatOrderStatus(order.status)}
                   </div>
                   <div className="text-sm font-semibold text-ink sm:text-right">
                     {formatRupiah(order.total_amount)}
@@ -1119,240 +1138,268 @@ export default function AdminPage() {
             className="absolute inset-0 h-full w-full"
             aria-label="Tutup"
           />
-          <div className="relative z-10 w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-2xl">
-            <div className="grid max-h-[90vh] gap-6 overflow-y-auto p-6 lg:grid-cols-[1.05fr_0.95fr]">
-              <div className="min-w-0 space-y-4">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div className="text-xs uppercase tracking-wide text-slate-400">
-                    Detail Order
-                  </div>
-                  <div className="mt-2 text-xl font-semibold text-ink">
-                    {orderModal.order_code ?? 'Belum ada ID'}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {orderModal.customer_name} - {orderModal.customer_whatsapp}
-                  </div>
-                  <div className="mt-2 text-xs text-slate-400">
-                    Tanggal order: {formatDateTime(orderModal.created_at)}
-                  </div>
-                  <div className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm">
-                    {orderModal.status}
-                  </div>
-                  <div className="mt-3 grid gap-2 text-xs text-slate-500">
-                    <div className="flex items-center justify-between">
-                      <span>ID Internal</span>
-                      <span className="font-semibold text-slate-700">{orderModal.id}</span>
+          <div className="relative z-10 w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <div className="grid max-h-[90vh] gap-5 overflow-y-auto p-6 lg:grid-cols-[1.05fr_0.95fr]">
+              <div className="min-w-0">
+                <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+                  <div className="divide-y divide-slate-100">
+                    <div className="px-5 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                          <div className="text-xs uppercase tracking-wide text-slate-400">
+                            Detail Order
+                          </div>
+                          <div className="mt-2 text-xl font-semibold text-ink">
+                            {orderModal.order_code ?? 'Belum ada ID'}
+                          </div>
+                      </div>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>Terakhir update</span>
-                      <span className="font-semibold text-slate-700">
-                        {formatDateTime(orderModal.updated_at)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
-                  <div className="text-xs uppercase tracking-wide text-slate-400">
-                    Ringkasan Pesanan
-                  </div>
-                  <div className="mt-3 space-y-2 text-slate-600">
-                    {orderModal.items?.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between">
-                        <span>
-                          {item.product_name_snapshot} x{item.qty}
-                        </span>
-                        <span>{formatRupiah(item.line_total)}</span>
+                    <div className="px-5 py-4 text-sm">
+                      <div className="text-xs uppercase tracking-wide text-slate-400">
+                        Ringkasan Pesanan
                       </div>
-                    ))}
-                    <div className="flex items-center justify-between font-semibold text-ink">
-                      <span>Total</span>
-                      <span>{formatRupiah(orderModal.total_amount)}</span>
+                      <div className="mt-3 divide-y divide-slate-100 text-slate-600">
+                        {orderModal.items?.map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-center justify-between py-2 text-sm"
+                          >
+                            <span>
+                              {item.product_name_snapshot} x{item.qty}
+                            </span>
+                            <span className="font-semibold text-ink">
+                              {formatRupiah(item.line_total)}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between pt-3 font-semibold text-ink">
+                          <span>Total</span>
+                          <span>{formatRupiah(orderModal.total_amount)}</span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                <details className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
-                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Data Lengkap
-                  </summary>
-                  <div className="mt-3 grid gap-2 text-sm text-slate-600">
-                    <div className="flex items-center justify-between">
-                      <span>Nama</span>
-                      <span className="font-semibold text-ink">
-                        {displayValue(orderModal.customer_name)}
-                      </span>
+                    <div className="px-5 py-4 text-sm">
+                      <div className="text-xs uppercase tracking-wide text-slate-400">
+                        Data Pelanggan & Pembayaran
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        {[
+                          ['Nama', displayValue(orderModal.customer_name)],
+                          ['WhatsApp', displayValue(orderModal.customer_whatsapp)],
+                          ['Voucher', displayValue(orderModal.voucher_code)],
+                          [
+                            'Diskon',
+                            orderModal.voucher_discount
+                              ? formatRupiah(orderModal.voucher_discount)
+                              : '-',
+                          ],
+                          [
+                            'Waktu',
+                            formatDateTime(orderModal.payment_proof_uploaded_at),
+                          ],
+                          ].map(([label, value]) => (
+                          <div
+                            key={label}
+                            className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                          >
+                            <div className="text-[11px] uppercase text-slate-400">
+                              {label}
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-ink">
+                              {value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>WhatsApp</span>
-                      <span className="font-semibold text-ink">
-                        {displayValue(orderModal.customer_whatsapp)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Voucher</span>
-                      <span className="font-semibold text-ink">
-                        {displayValue(orderModal.voucher_code)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Diskon Voucher</span>
-                      <span className="font-semibold text-ink">
-                        {orderModal.voucher_discount
-                          ? formatRupiah(orderModal.voucher_discount)
-                          : '-'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Waktu bukti</span>
-                      <span className="font-semibold text-ink">
-                        {formatDateTime(orderModal.payment_proof_uploaded_at)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Link bukti</span>
-                      <span className="font-semibold text-ink">
-                        {orderModal.payment_proof_url ? 'Ada' : '-'}
-                      </span>
-                    </div>
-                  </div>
 
-                  <div className="mt-4 border-t border-slate-100 pt-3 text-sm">
-                    <div className="text-xs uppercase tracking-wide text-slate-400">
-                      Akun / Link Premium
+                    <div className="px-5 py-4 text-sm">
+                      <div className="text-xs uppercase tracking-wide text-slate-400">
+                        Akun / Link Premium
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        {[
+                          ['Akun', displayValue(orderModal.fulfillment_account)],
+                          ['Email', displayValue(orderModal.fulfillment_email)],
+                          ['Password', displayValue(orderModal.fulfillment_password)],
+                        ].map(([label, value]) => (
+                          <div
+                            key={label}
+                            className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                          >
+                            <div className="text-[11px] uppercase text-slate-400">
+                              {label}
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-ink">
+                              {value}
+                            </div>
+                          </div>
+                        ))}
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 sm:col-span-2">
+                          <div className="text-[11px] uppercase text-slate-400">Link</div>
+                          <div className="mt-1 break-all text-sm font-semibold text-ink">
+                            {displayValue(orderModal.fulfillment_link)}
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 sm:col-span-2">
+                          <div className="text-[11px] uppercase text-slate-400">
+                            Catatan
+                          </div>
+                          <div className="mt-1 break-words text-sm font-semibold text-ink">
+                            {displayValue(orderModal.fulfillment_notes)}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="mt-2 grid gap-2 text-slate-600">
-                      <div className="flex items-center justify-between">
-                        <span>Akun</span>
-                        <span className="font-semibold text-ink">
-                          {displayValue(orderModal.fulfillment_account)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Email</span>
-                        <span className="font-semibold text-ink">
-                          {displayValue(orderModal.fulfillment_email)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Password</span>
-                        <span className="font-semibold text-ink">
-                          {displayValue(orderModal.fulfillment_password)}
-                        </span>
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <span>Link</span>
-                        <span className="max-w-[220px] break-all text-right font-semibold text-ink">
-                          {displayValue(orderModal.fulfillment_link)}
-                        </span>
-                      </div>
-                      <div className="flex items-start justify-between gap-3">
-                        <span>Catatan</span>
-                        <span className="max-w-[220px] break-words text-right font-semibold text-ink">
-                          {displayValue(orderModal.fulfillment_notes)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </details>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                  <div className="text-xs uppercase tracking-wide text-slate-500">
-                    Bukti Pembayaran
-                  </div>
-                  {orderModal.payment_proof_url ? (
-                    <img
-                      src={orderModal.payment_proof_url}
-                      alt="Bukti pembayaran"
-                      className="mt-3 h-48 w-full rounded-2xl object-cover"
-                    />
-                  ) : (
-                    <div className="mt-3 text-xs text-slate-500">
-                      Belum ada bukti pembayaran.
+                    <div className="px-5 py-4 text-sm">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">
+                        Bukti Pembayaran
+                      </div>
+                      {orderModal.payment_proof_url ? (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImage(orderModal.payment_proof_url ?? null)}
+                          className="mt-3 w-full"
+                        >
+                          <img
+                            src={orderModal.payment_proof_url}
+                            alt="Bukti pembayaran"
+                            className="aspect-video w-full rounded-2xl object-cover shadow-sm transition hover:opacity-90"
+                          />
+                        </button>
+                      ) : (
+                        <div className="mt-3 text-xs text-slate-500">
+                          Belum ada bukti pembayaran.
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
 
-              <div className="w-full space-y-3">
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-                  Lengkapi status dan kirim akun/link setelah pembayaran valid.
+              <div className="w-full space-y-4">
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 shadow-sm">
+                  <div className="px-5 py-4 text-sm">
+                    <div className="text-xs uppercase tracking-wide text-slate-400">
+                      Pengolahan Order
+                    </div>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Lengkapi status dan kirim akun/link setelah pembayaran valid.
+                    </p>
+                    <div className="mt-5 space-y-4">
+                      <div>
+                        <div className="text-[11px] uppercase text-slate-400">
+                          Status Order
+                        </div>
+                        <select
+                          value={orderModal.status}
+                          onChange={(event) =>
+                            setOrderModal((prev) =>
+                              prev ? { ...prev, status: event.target.value } : prev
+                            )
+                          }
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                        >
+                          {orderStatusOptions.map((status) => (
+                            <option key={status} value={status}>
+                              {formatOrderStatus(status)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <div className="text-[11px] uppercase text-slate-400">
+                          Akun Premium
+                        </div>
+                        <div className="mt-2 grid gap-3">
+                          <input
+                            value={orderModal.fulfillment_account ?? ''}
+                            onChange={(event) =>
+                              setOrderModal((prev) =>
+                                prev
+                                  ? { ...prev, fulfillment_account: event.target.value }
+                                  : prev
+                              )
+                            }
+                            placeholder="Akun / Username"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                          />
+                          <input
+                            value={orderModal.fulfillment_email ?? ''}
+                            onChange={(event) =>
+                              setOrderModal((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      fulfillment_email: event.target.value,
+                                    }
+                                  : prev
+                              )
+                            }
+                            placeholder="Email akun premium"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                          />
+                          <input
+                            value={orderModal.fulfillment_password ?? ''}
+                            onChange={(event) =>
+                              setOrderModal((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      fulfillment_password: event.target.value,
+                                    }
+                                  : prev
+                              )
+                            }
+                            placeholder="Password akun premium"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                          />
+                          <input
+                            value={orderModal.fulfillment_link ?? ''}
+                            onChange={(event) =>
+                              setOrderModal((prev) =>
+                                prev
+                                  ? { ...prev, fulfillment_link: event.target.value }
+                                  : prev
+                              )
+                            }
+                            placeholder="Link / invite"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                          />
+                          <textarea
+                            value={orderModal.fulfillment_notes ?? ''}
+                            onChange={(event) =>
+                              setOrderModal((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      fulfillment_notes: event.target.value,
+                                    }
+                                  : prev
+                              )
+                            }
+                            placeholder="Catatan admin (bisa enter)"
+                            className="min-h-[110px] w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <select
-                  value={orderModal.status}
-                  onChange={(event) =>
-                    setOrderModal((prev) =>
-                      prev ? { ...prev, status: event.target.value } : prev
-                    )
-                  }
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-                >
-                  <option value="PENDING_PAYMENT">PENDING_PAYMENT</option>
-                  <option value="PAID">PAID</option>
-                  <option value="DELIVERED">DELIVERED</option>
-                  <option value="CANCELLED">CANCELLED</option>
-                  <option value="INVALID_PAYMENT">INVALID_PAYMENT</option>
-                  <option value="REFUND">REFUND</option>
-                </select>
-                <input
-                  value={orderModal.fulfillment_account ?? ''}
-                  onChange={(event) =>
-                    setOrderModal((prev) =>
-                      prev ? { ...prev, fulfillment_account: event.target.value } : prev
-                    )
-                  }
-                  placeholder="Akun / Username"
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-                />
-                <input
-                  value={orderModal.fulfillment_email ?? ''}
-                  onChange={(event) =>
-                    setOrderModal((prev) =>
-                      prev ? { ...prev, fulfillment_email: event.target.value } : prev
-                    )
-                  }
-                  placeholder="Email akun premium"
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-                />
-                <input
-                  value={orderModal.fulfillment_password ?? ''}
-                  onChange={(event) =>
-                    setOrderModal((prev) =>
-                      prev ? { ...prev, fulfillment_password: event.target.value } : prev
-                    )
-                  }
-                  placeholder="Password akun premium"
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-                />
-                <input
-                  value={orderModal.fulfillment_link ?? ''}
-                  onChange={(event) =>
-                    setOrderModal((prev) =>
-                      prev ? { ...prev, fulfillment_link: event.target.value } : prev
-                    )
-                  }
-                  placeholder="Link / invite"
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-                />
-                <textarea
-                  value={orderModal.fulfillment_notes ?? ''}
-                  onChange={(event) =>
-                    setOrderModal((prev) =>
-                      prev ? { ...prev, fulfillment_notes: event.target.value } : prev
-                    )
-                  }
-                  placeholder="Catatan admin (bisa enter)"
-                  className="min-h-[110px] w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-                />
                 <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleUpdateOrder(orderModal)}
-                  disabled={isBusy}
-                  className="rounded-full bg-ink px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {isBusy ? 'Menyimpan...' : 'Simpan Perubahan'}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateOrder(orderModal)}
+                    disabled={isBusy}
+                    className="rounded-full bg-ink px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {isBusy ? 'UPDATING...' : 'UPDATE'}
+                  </button>
                   <button
                     type="button"
                     onClick={() => setOrderModal(null)}
@@ -1362,6 +1409,72 @@ export default function AdminPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previewImage && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 px-4 py-6">
+          <button
+            type="button"
+            onClick={() => setPreviewImage(null)}
+            className="absolute inset-0 h-full w-full"
+            aria-label="Tutup pratinjau"
+          />
+          <div className="relative z-10 w-full max-w-4xl">
+            <img
+              src={previewImage}
+              alt="Bukti pembayaran"
+              className="max-h-[90vh] w-full rounded-3xl object-contain shadow-2xl"
+            />
+            <button
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700 shadow"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
+          <button
+            type="button"
+            onClick={() => setShowLogoutConfirm(false)}
+            className="absolute inset-0 h-full w-full"
+            aria-label="Tutup"
+          />
+          <div className="relative z-10 w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="text-xs uppercase tracking-wide text-slate-400">
+              Konfirmasi
+            </div>
+            <div className="mt-2 text-lg font-semibold text-ink">
+              Keluar dari admin?
+            </div>
+            <p className="mt-2 text-sm text-slate-500">
+              Kamu harus login kembali untuk mengakses panel admin.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowLogoutConfirm(false);
+                  await handleLogout();
+                }}
+                className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white"
+              >
+                Logout
+              </button>
             </div>
           </div>
         </div>

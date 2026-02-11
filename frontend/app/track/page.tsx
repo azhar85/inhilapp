@@ -57,8 +57,6 @@ export default function TrackPage() {
         return { label: 'Pembayaran tidak sah', tone: 'bg-rose-100 text-rose-700 border-rose-200' };
       case 'REFUND':
         return { label: 'Refund', tone: 'bg-slate-100 text-slate-700 border-slate-200' };
-      case 'CANCELLED':
-        return { label: 'Dibatalkan', tone: 'bg-rose-100 text-rose-700 border-rose-200' };
       default:
         return { label: order?.status ?? '-', tone: 'bg-slate-100 text-slate-700 border-slate-200' };
     }
