@@ -35,9 +35,10 @@ class ProductController extends Controller
             }
         }
 
-        return response()->json(
-            $query->orderByDesc('created_at')->get()
-        );
+        $products = $query->orderByDesc('created_at')->get();
+        $products = $products->map(fn (Product $product) => $this->normalizeProduct($product));
+
+        return response()->json($products);
     }
 
     public function store(Request $request)
@@ -65,7 +66,7 @@ class ProductController extends Controller
 
         $product = Product::create($data);
 
-        return response()->json($product, 201);
+        return response()->json($this->normalizeProduct($product), 201);
     }
 
     public function update(Request $request, Product $product)
@@ -107,7 +108,7 @@ class ProductController extends Controller
         $product->fill($data);
         $product->save();
 
-        return response()->json($product);
+        return response()->json($this->normalizeProduct($product));
     }
 
     public function destroy(Product $product)
@@ -198,6 +199,56 @@ class ProductController extends Controller
         }
 
         return $urls;
+    }
+
+    private function normalizeProduct(Product $product): Product
+    {
+        $product->image_url = $this->normalizeMediaUrl($product->image_url);
+        $images = $product->product_images ?? [];
+        if (! is_array($images)) {
+            $images = [];
+        }
+        $product->product_images = array_values(array_filter(array_map(
+            fn ($image) => $this->normalizeMediaUrl($image),
+            $images
+        )));
+
+        return $product;
+    }
+
+    private function normalizeMediaUrl(?string $url): ?string
+    {
+        if (! $url) {
+            return null;
+        }
+        $trimmed = trim($url);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $lower = strtolower($trimmed);
+        if (
+            str_starts_with($lower, 'http://localhost') ||
+            str_starts_with($lower, 'https://localhost') ||
+            str_starts_with($lower, 'http://127.0.0.1') ||
+            str_starts_with($lower, 'http://0.0.0.0')
+        ) {
+            $path = parse_url($trimmed, PHP_URL_PATH) ?? '';
+            if (str_contains($path, '/storage/')) {
+                $path = substr($path, strpos($path, '/storage/') + 9);
+            }
+            return $this->publicUrl($path);
+        }
+
+        if (str_starts_with($trimmed, '/storage/')) {
+            return $this->publicUrl(substr($trimmed, 9));
+        }
+
+        if (! preg_match('~^https?://~i', $trimmed)) {
+            return $this->publicUrl($trimmed);
+        }
+
+        return $trimmed;
     }
 
     private function publicUrl(string $path): string
