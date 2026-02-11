@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Order, Product, Stock, Voucher } from '@/lib/types';
+import type { Order, Product, SiteSettings, Stock, Voucher } from '@/lib/types';
 import { formatRupiah } from '@/lib/formatRupiah';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 const ADMIN_TOKEN_KEY = 'inhilapp_admin_token';
 
-type TabKey = 'products' | 'orders' | 'vouchers' | 'stocks';
+type TabKey = 'products' | 'orders' | 'vouchers' | 'stocks' | 'settings';
 
 type ProductFormState = {
   id?: number;
@@ -51,6 +51,11 @@ type StockFormState = {
   is_active: boolean;
 };
 
+type SettingsFormState = {
+  store_name: string;
+  store_tagline: string;
+};
+
 const defaultProductForm: ProductFormState = {
   name: '',
   price: '',
@@ -89,6 +94,11 @@ const defaultStockForm: StockFormState = {
   is_active: true,
 };
 
+const defaultSettingsForm: SettingsFormState = {
+  store_name: '',
+  store_tagline: '',
+};
+
 export default function AdminPage() {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
@@ -102,10 +112,14 @@ export default function AdminPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [stocks, setStocks] = useState<Stock[]>([]);
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
 
   const [productForm, setProductForm] = useState<ProductFormState>(defaultProductForm);
   const [voucherForm, setVoucherForm] = useState<VoucherFormState>(defaultVoucherForm);
   const [stockForm, setStockForm] = useState<StockFormState>(defaultStockForm);
+  const [settingsForm, setSettingsForm] = useState<SettingsFormState>(
+    defaultSettingsForm
+  );
 
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
@@ -113,6 +127,12 @@ export default function AdminPage() {
   const [existingGallery, setExistingGallery] = useState<string[]>([]);
   const [clearGallery, setClearGallery] = useState(false);
   const [removeCover, setRemoveCover] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [qrisFile, setQrisFile] = useState<File | null>(null);
+  const [existingLogo, setExistingLogo] = useState<string | null>(null);
+  const [existingQris, setExistingQris] = useState<string | null>(null);
+  const [removeLogo, setRemoveLogo] = useState(false);
+  const [removeQris, setRemoveQris] = useState(false);
 
   const [orderQuery, setOrderQuery] = useState('');
   const [orderStatus, setOrderStatus] = useState('Semua');
@@ -160,28 +180,49 @@ export default function AdminPage() {
       setLoading(true);
       setError(null);
       try {
-        const [productRes, orderRes, voucherRes, stockRes] = await Promise.all([
-          adminFetch(`${API_BASE}/api/admin/products`),
-          adminFetch(`${API_BASE}/api/admin/orders`),
-          adminFetch(`${API_BASE}/api/admin/vouchers`),
-          adminFetch(`${API_BASE}/api/admin/stocks`),
-        ]);
+        const [productRes, orderRes, voucherRes, stockRes, settingRes] =
+          await Promise.all([
+            adminFetch(`${API_BASE}/api/admin/products`),
+            adminFetch(`${API_BASE}/api/admin/orders`),
+            adminFetch(`${API_BASE}/api/admin/vouchers`),
+            adminFetch(`${API_BASE}/api/admin/stocks`),
+            adminFetch(`${API_BASE}/api/admin/settings`),
+          ]);
 
-        if (!productRes.ok || !orderRes.ok || !voucherRes.ok || !stockRes.ok) {
+        if (
+          !productRes.ok ||
+          !orderRes.ok ||
+          !voucherRes.ok ||
+          !stockRes.ok ||
+          !settingRes.ok
+        ) {
           throw new Error('Gagal memuat data admin.');
         }
 
-        const [productData, orderData, voucherData, stockData] = await Promise.all([
-          productRes.json(),
-          orderRes.json(),
-          voucherRes.json(),
-          stockRes.json(),
-        ]);
+        const [productData, orderData, voucherData, stockData, settingData] =
+          await Promise.all([
+            productRes.json(),
+            orderRes.json(),
+            voucherRes.json(),
+            stockRes.json(),
+            settingRes.json(),
+          ]);
 
         setProducts(filterActiveProducts(productData));
         setOrders(orderData);
         setVouchers(voucherData);
         setStocks(stockData);
+        setSettings(settingData);
+        setSettingsForm({
+          store_name: settingData?.store_name ?? '',
+          store_tagline: settingData?.store_tagline ?? '',
+        });
+        setExistingLogo(settingData?.logo_url ?? null);
+        setExistingQris(settingData?.qris_url ?? null);
+        setLogoFile(null);
+        setQrisFile(null);
+        setRemoveLogo(false);
+        setRemoveQris(false);
       } catch (err) {
         setError('Data admin gagal dimuat. Coba refresh.');
       } finally {
@@ -583,6 +624,65 @@ export default function AdminPage() {
     }
   };
 
+  const handleSaveSettings = async () => {
+    if (actionLoading) return;
+    setActionLoading('Menyimpan pengaturan toko...');
+    setError(null);
+    try {
+      const payload = new FormData();
+      const nextName =
+        settingsForm.store_name.trim() ||
+        settings?.store_name ||
+        'InhilApp';
+      payload.append('store_name', nextName);
+
+      if (settingsForm.store_tagline.trim()) {
+        payload.append('store_tagline', settingsForm.store_tagline.trim());
+      } else {
+        payload.append('store_tagline', '');
+      }
+
+      if (logoFile) {
+        payload.append('logo', logoFile);
+      }
+      if (qrisFile) {
+        payload.append('qris', qrisFile);
+      }
+      if (removeLogo) {
+        payload.append('remove_logo', '1');
+      }
+      if (removeQris) {
+        payload.append('remove_qris', '1');
+      }
+
+      const response = await adminFetch(`${API_BASE}/api/admin/settings`, {
+        method: 'POST',
+        body: payload,
+      });
+
+      if (!response.ok) {
+        setError('Gagal menyimpan pengaturan toko.');
+        return;
+      }
+
+      const data = await response.json();
+      setSettings(data);
+      setSettingsForm({
+        store_name: data?.store_name ?? '',
+        store_tagline: data?.store_tagline ?? '',
+      });
+      setExistingLogo(data?.logo_url ?? null);
+      setExistingQris(data?.qris_url ?? null);
+      setLogoFile(null);
+      setQrisFile(null);
+      setRemoveLogo(false);
+      setRemoveQris(false);
+      setSuccessMessage('Pengaturan toko tersimpan.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleEditStock = (stock: Stock) => {
     setStockForm({
       id: stock.id,
@@ -741,6 +841,26 @@ export default function AdminPage() {
       `Produk #${stockForm.product_id}`
     );
   }, [stockForm.product_id, stockForm.id, products, stocks]);
+  const logoPreview = useMemo(() => {
+    if (logoFile) {
+      return URL.createObjectURL(logoFile);
+    }
+    return existingLogo;
+  }, [logoFile, existingLogo]);
+  const qrisPreview = useMemo(() => {
+    if (qrisFile) {
+      return URL.createObjectURL(qrisFile);
+    }
+    return existingQris;
+  }, [qrisFile, existingQris]);
+  useEffect(() => {
+    if (!logoFile || !logoPreview) return;
+    return () => URL.revokeObjectURL(logoPreview);
+  }, [logoFile, logoPreview]);
+  useEffect(() => {
+    if (!qrisFile || !qrisPreview) return;
+    return () => URL.revokeObjectURL(qrisPreview);
+  }, [qrisFile, qrisPreview]);
   const existingProductImages = [
     ...(existingCover ? [existingCover] : []),
     ...existingGallery,
@@ -821,7 +941,7 @@ export default function AdminPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(['products', 'orders', 'vouchers', 'stocks'] as TabKey[]).map(
+            {(['products', 'orders', 'vouchers', 'stocks', 'settings'] as TabKey[]).map(
               (tab) => (
               <button
                 key={tab}
@@ -837,6 +957,7 @@ export default function AdminPage() {
                 {tab === 'orders' && 'Order'}
                 {tab === 'vouchers' && 'Voucher'}
                 {tab === 'stocks' && 'Stock'}
+                {tab === 'settings' && 'Toko'}
               </button>
             ))}
             <button
@@ -1125,6 +1246,158 @@ export default function AdminPage() {
                   </div>
                 </button>
               ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'settings' && (
+        <section className="mt-8">
+          <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-soft">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-ink">Pengaturan Toko</h2>
+              <button
+                type="button"
+                onClick={handleSaveSettings}
+                disabled={isBusy}
+                className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {isBusy ? 'Menyimpan...' : 'Simpan Perubahan'}
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="space-y-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Nama Toko
+                  </div>
+                  <input
+                    value={settingsForm.store_name}
+                    onChange={(event) =>
+                      setSettingsForm((prev) => ({
+                        ...prev,
+                        store_name: event.target.value,
+                      }))
+                    }
+                    placeholder="Nama toko"
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Tagline (opsional)
+                  </div>
+                  <input
+                    value={settingsForm.store_tagline}
+                    onChange={(event) =>
+                      setSettingsForm((prev) => ({
+                        ...prev,
+                        store_tagline: event.target.value,
+                      }))
+                    }
+                    placeholder="Contoh: Premium App"
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                  />
+                </div>
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-4 text-xs text-slate-500">
+                  Gambar logo dan QRIS akan digunakan di halaman pelanggan.
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Logo Toko
+                  </div>
+                  <div className="mt-3 flex items-center gap-4">
+                    {logoPreview ? (
+                      <img
+                        src={logoPreview}
+                        alt="Logo toko"
+                        className="h-16 w-16 rounded-2xl border border-slate-200 object-cover"
+                      />
+                    ) : (
+                      <div className="grid h-16 w-16 place-items-center rounded-2xl border border-dashed border-slate-200 text-[11px] text-slate-400">
+                        Tidak ada
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null;
+                          setLogoFile(file);
+                          if (file) {
+                            setRemoveLogo(false);
+                          }
+                        }}
+                        className="text-xs"
+                      />
+                      {(logoPreview || existingLogo) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLogoFile(null);
+                            setExistingLogo(null);
+                            setRemoveLogo(true);
+                          }}
+                          className="text-xs font-semibold text-rose-600"
+                        >
+                          Hapus logo
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    QRIS
+                  </div>
+                  <div className="mt-3 flex items-center gap-4">
+                    {qrisPreview ? (
+                      <img
+                        src={qrisPreview}
+                        alt="QRIS"
+                        className="h-20 w-20 rounded-2xl border border-slate-200 object-cover"
+                      />
+                    ) : (
+                      <div className="grid h-20 w-20 place-items-center rounded-2xl border border-dashed border-slate-200 text-[11px] text-slate-400">
+                        Tidak ada
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null;
+                          setQrisFile(file);
+                          if (file) {
+                            setRemoveQris(false);
+                          }
+                        }}
+                        className="text-xs"
+                      />
+                      {(qrisPreview || existingQris) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQrisFile(null);
+                            setExistingQris(null);
+                            setRemoveQris(true);
+                          }}
+                          className="text-xs font-semibold text-rose-600"
+                        >
+                          Hapus QRIS
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>

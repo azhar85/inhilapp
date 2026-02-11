@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { formatRupiah } from '@/lib/formatRupiah';
-import type { Order } from '@/lib/types';
+import type { Order, SiteSettings } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 
@@ -21,6 +21,7 @@ export default function PayPage() {
   const [showQris, setShowQris] = useState(false);
   const [confirmedOrderCode, setConfirmedOrderCode] = useState<string | null>(null);
   const [uploadWarning, setUploadWarning] = useState<string | null>(null);
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
 
   const subtotal = useMemo(() => {
     if (!order?.items) return 0;
@@ -68,6 +69,31 @@ export default function PayPage() {
 
     return () => controller.abort();
   }, [orderId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadSettings() {
+      try {
+        const response = await fetch(`${API_BASE}/api/settings`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const data = (await response.json()) as SiteSettings;
+        setSettings(data);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    loadSettings();
+    return () => controller.abort();
+  }, []);
+
+  const qrisUrl = settings?.qris_url || '/qris.png';
+  const storeName = settings?.store_name || 'InhilApp';
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -219,6 +245,24 @@ export default function PayPage() {
           <div className="rounded-2xl border border-white/60 bg-white/70 p-6 shadow-soft">
             <div className="mt-6 space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-5">
               <div className="text-sm font-semibold text-ink">Ringkasan Pesanan</div>
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-400">
+                    Nama
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-ink">
+                    {order.customer_name}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-400">
+                    WhatsApp
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-ink">
+                    {order.customer_whatsapp}
+                  </div>
+                </div>
+              </div>
               <div className="space-y-3">
                 {order.items.map((item) => (
                   <div
@@ -282,8 +326,8 @@ export default function PayPage() {
                 </p>
                 <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4">
                   <img
-                    src="/qris.png"
-                    alt="QRIS InhilApp"
+                    src={qrisUrl}
+                    alt={`QRIS ${storeName}`}
                     className="mx-auto w-full max-w-sm"
                   />
                 </div>

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import ProductCard from '@/components/ProductCard';
 import { useCart } from '@/hooks/useCart';
-import type { Product } from '@/lib/types';
+import type { Product, SiteSettings } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 
@@ -15,6 +15,7 @@ export default function HomePage() {
   const [activeCategory, setActiveCategory] = useState<string>('Semua');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
 
   const categories = useMemo(() => {
     const items = products
@@ -77,6 +78,32 @@ export default function HomePage() {
     return () => controller.abort();
   }, [queryString]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadSettings() {
+      try {
+        const response = await fetch(`${API_BASE}/api/settings`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const data = (await response.json()) as SiteSettings;
+        setSettings(data);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    loadSettings();
+    return () => controller.abort();
+  }, []);
+
+  const storeName = settings?.store_name?.trim() ? settings.store_name : 'InhilApp';
+  const storeTagline = settings?.store_tagline ?? 'Premium App';
+  const logoUrl = settings?.logo_url || '/logo.png';
+
   return (
     <main className="relative mx-auto max-w-6xl px-6 py-10">
       <nav className="sticky top-4 z-30">
@@ -85,17 +112,17 @@ export default function HomePage() {
             <div className="flex items-center gap-3">
               <div className="grid h-11 w-11 place-items-center overflow-hidden rounded-2xl border border-slate-200 bg-white">
                 <img
-                  src="/logo.png"
-                  alt="InhilApp"
+                  src={logoUrl}
+                  alt={storeName}
                   className="h-full w-full object-cover"
                 />
               </div>
               <div className="flex flex-col leading-tight">
                 <span className="text-xs uppercase tracking-[0.25em] text-slate-400">
-                  InhilApp
+                  {storeName}
                 </span>
                 <span className="text-sm font-semibold text-ink">
-                  Premium App
+                  {storeTagline}
                 </span>
               </div>
             </div>
@@ -214,14 +241,14 @@ export default function HomePage() {
           <div className="grid gap-6 sm:grid-cols-[1.2fr_1fr]">
             <div>
               <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                InhilApp
+                {storeName}
               </div>
               <p className="mt-3 text-sm text-slate-600">
                 Katalog premium digital dengan proses cepat dan aman melalui
                 WhatsApp. Simpan ID order untuk pelacakan.
               </p>
               <div className="mt-4 text-xs text-slate-400">
-                (c) {new Date().getFullYear()} InhilApp. All rights reserved.
+                (c) {new Date().getFullYear()} {storeName}. All rights reserved.
               </div>
             </div>
             <div className="sm:justify-self-end">

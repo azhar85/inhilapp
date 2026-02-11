@@ -14,6 +14,14 @@ export type Product = {
   is_active: boolean;
 };
 
+export type SiteSettings = {
+  id?: number;
+  store_name?: string | null;
+  store_tagline?: string | null;
+  logo_url?: string | null;
+  qris_url?: string | null;
+};
+
 export type OrderItem = {
   id: number;
   order_id: number;
