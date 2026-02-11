@@ -32,7 +32,7 @@ class PaymentProofController extends Controller
 
         $file = $request->file('proof');
         $path = $file->store('payment-proofs', 'public');
-        $publicUrl = Storage::disk('public')->url($path);
+        $publicUrl = $this->publicUrl($path);
 
         $order->payment_proof_url = $publicUrl;
         $order->payment_proof_uploaded_at = now();
@@ -167,6 +167,16 @@ class PaymentProofController extends Controller
         }
 
         return $prefix . strtoupper(Str::random(8));
+    }
+
+    private function publicUrl(string $path): string
+    {
+        $base = rtrim(config('app.url') ?: request()->getSchemeAndHttpHost(), '/');
+        if ($base) {
+            return $base . '/storage/' . ltrim($path, '/');
+        }
+
+        return Storage::disk('public')->url($path);
     }
 
 }

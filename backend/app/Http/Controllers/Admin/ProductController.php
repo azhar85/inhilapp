@@ -187,7 +187,7 @@ class ProductController extends Controller
     private function storeImage($file): string
     {
         $path = $file->store('product-images', 'public');
-        return Storage::disk('public')->url($path);
+        return $this->publicUrl($path);
     }
 
     private function storeGallery(array $files): array
@@ -198,6 +198,16 @@ class ProductController extends Controller
         }
 
         return $urls;
+    }
+
+    private function publicUrl(string $path): string
+    {
+        $base = rtrim(config('app.url') ?: request()->getSchemeAndHttpHost(), '/');
+        if ($base) {
+            return $base . '/storage/' . ltrim($path, '/');
+        }
+
+        return Storage::disk('public')->url($path);
     }
 
 }

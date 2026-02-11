@@ -10,9 +10,7 @@ Thumbs.db
 # Backend
 backend/.env
 backend/vendor/
-backend/storage/
 backend/public/storage
-backend/bootstrap/cache/
 
 # Frontend
 frontend/.next/

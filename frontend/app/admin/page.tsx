@@ -373,8 +373,12 @@ export default function AdminPage() {
     setActionLoading('Menghapus produk...');
     setError(null);
     try {
+      const deletePayload = new FormData();
+      deletePayload.append('_method', 'DELETE');
+
       const response = await adminFetch(`${API_BASE}/api/admin/products/${productId}`, {
-        method: 'DELETE',
+        method: 'POST',
+        body: deletePayload,
       });
 
       if (!response.ok) {
@@ -496,8 +500,12 @@ export default function AdminPage() {
     setActionLoading('Menghapus voucher...');
     setError(null);
     try {
+      const deletePayload = new FormData();
+      deletePayload.append('_method', 'DELETE');
+
       const response = await adminFetch(`${API_BASE}/api/admin/vouchers/${voucherId}`, {
-        method: 'DELETE',
+        method: 'POST',
+        body: deletePayload,
       });
 
       if (!response.ok) {
@@ -599,8 +607,12 @@ export default function AdminPage() {
     setActionLoading('Menghapus stock...');
     setError(null);
     try {
+      const deletePayload = new FormData();
+      deletePayload.append('_method', 'DELETE');
+
       const response = await adminFetch(`${API_BASE}/api/admin/stocks/${stockId}`, {
-        method: 'DELETE',
+        method: 'POST',
+        body: deletePayload,
       });
 
       if (!response.ok) {
