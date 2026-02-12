@@ -165,19 +165,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateQty = (productId: number, qty: number) => {
-    setItems((prev) => {
-      return prev.map((item) =>
-        item.product_id === productId
-          ? {
-              ...item,
-              qty:
-                item.stock === null || item.stock === undefined
-                  ? qty
-                  : Math.min(qty, item.stock),
-            }
-          : item
-      );
-    }).filter((item) => item.qty > 0);
+    setItems((prev) =>
+      prev
+        .map((item) =>
+          item.product_id === productId
+            ? {
+                ...item,
+                qty:
+                  item.stock === null || item.stock === undefined
+                    ? qty
+                    : Math.min(qty, item.stock),
+              }
+            : item
+        )
+        .filter((item) => item.qty > 0)
+    );
     clearVoucher();
   };
 
