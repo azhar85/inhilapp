@@ -84,7 +84,12 @@ export default function CartPage() {
                 <button
                   type="button"
                   onClick={() => updateQty(item.product_id, item.qty + 1)}
-                  className="h-8 w-8 rounded-full border border-slate-200 text-sm"
+                  disabled={
+                    item.stock !== null &&
+                    item.stock !== undefined &&
+                    item.qty >= item.stock
+                  }
+                  className="h-8 w-8 rounded-full border border-slate-200 text-sm disabled:cursor-not-allowed disabled:text-slate-300"
                 >
                   +
                 </button>

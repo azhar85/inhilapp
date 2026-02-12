@@ -4,17 +4,22 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { formatRupiah } from '@/lib/formatRupiah';
-import type { Order } from '@/lib/types';
+import type { Order, SiteSettings } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 
 export default function TrackClient() {
   const searchParams = useSearchParams();
   const initialCode = searchParams.get('code') ?? '';
+  const initialShowSuccess = searchParams.get('success') === '1';
   const [code, setCode] = useState(initialCode);
   const [order, setOrder] = useState<Order | null>(null);
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(initialShowSuccess);
+  const adminWhatsapp = settings?.admin_whatsapp ?? '';
+  const adminWaLink = adminWhatsapp ? `https://wa.me/${adminWhatsapp}` : null;
 
   const normalizedCode = useMemo(() => code.trim(), [code]);
   const itemCount = useMemo(() => {
@@ -90,6 +95,27 @@ export default function TrackClient() {
     if (!initialCode) return;
     fetchOrder(initialCode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadSettings() {
+      try {
+        const response = await fetch(`${API_BASE}/api/settings`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const data = (await response.json()) as SiteSettings;
+        setSettings(data);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    loadSettings();
+    return () => controller.abort();
   }, []);
 
   async function fetchOrder(value: string) {
@@ -208,14 +234,6 @@ export default function TrackClient() {
                 </div>
                 <div className="mt-2 text-sm font-semibold text-ink">
                   {orderDate ?? '-'}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-400">
-                  Jumlah Item
-                </div>
-                <div className="mt-2 text-sm font-semibold text-ink">
-                  {itemCount} item
                 </div>
               </div>
             </div>
@@ -339,6 +357,103 @@ export default function TrackClient() {
             })()}
           </div>
         </section>
+      )}
+
+      {showSuccessModal && order && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-ink">
+                  Berhasil!
+                </div>
+                <p className="mt-2 text-sm text-slate-600">
+                  Pesanan kamu sedang diproses. Simpan ID order untuk pelacakan.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSuccessModal(false)}
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+              >
+                Tutup
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              ID Order:{' '}
+              <span className="font-semibold">{order.order_code ?? order.id}</span>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+              <div className="text-xs uppercase tracking-wide text-slate-500">
+                Butuh bantuan?
+              </div>
+              <div className="mt-2 text-sm text-slate-700">
+                Hubungi admin via WhatsApp:{' '}
+                <span className="font-semibold">
+                  {adminWhatsapp || '-'}
+                </span>
+              </div>
+              {adminWaLink && (
+                <a
+                  href={adminWaLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-ink transition hover:border-brand hover:text-brand"
+                >
+                  Chat Admin
+                </a>
+              )}
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+              <div className="text-xs uppercase tracking-wide text-slate-500">
+                Detail Pesanan
+              </div>
+              <div className="mt-3 space-y-2">
+                {order.items.map((item) => (
+                  <div
+                    key={`success-${item.id}`}
+                    className="flex items-start justify-between gap-4 text-sm"
+                  >
+                    <div>
+                      <div className="font-medium text-ink">
+                        {item.product_name_snapshot}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {item.qty} x {formatRupiah(item.unit_price)}
+                      </div>
+                    </div>
+                    <div className="font-semibold text-ink">
+                      {formatRupiah(item.line_total)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 space-y-2 border-t border-slate-200 pt-3 text-sm">
+                <div className="flex items-center justify-between text-slate-600">
+                  <span>Subtotal</span>
+                  <span>
+                    {formatRupiah(order.items.reduce((sum, item) => sum + item.line_total, 0))}
+                  </span>
+                </div>
+                {(order.voucher_discount ?? 0) > 0 && (
+                  <div className="flex items-center justify-between text-emerald-700">
+                    <span>
+                      Voucher {order.voucher_code ? `(${order.voucher_code})` : ''}
+                    </span>
+                    <span>-{formatRupiah(order.voucher_discount ?? 0)}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between font-semibold text-ink">
+                  <span>Total</span>
+                  <span>{formatRupiah(order.total_amount)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

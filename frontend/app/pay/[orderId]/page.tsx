@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { formatRupiah } from '@/lib/formatRupiah';
 import type { Order, SiteSettings } from '@/lib/types';
@@ -9,6 +9,7 @@ import type { Order, SiteSettings } from '@/lib/types';
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 
 export default function PayPage() {
+  const router = useRouter();
   const params = useParams<{ orderId: string }>();
   const orderId = params?.orderId;
   const [order, setOrder] = useState<Order | null>(null);
@@ -17,10 +18,7 @@ export default function PayPage() {
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadSuccess, setUploadSuccess] = useState(false);
   const [showQris, setShowQris] = useState(false);
-  const [confirmedOrderCode, setConfirmedOrderCode] = useState<string | null>(null);
-  const [uploadWarning, setUploadWarning] = useState<string | null>(null);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
 
   const subtotal = useMemo(() => {
@@ -105,8 +103,6 @@ export default function PayPage() {
 
     setUploading(true);
     setUploadError(null);
-    setUploadSuccess(false);
-    setUploadWarning(null);
 
     try {
       const formData = new FormData();
@@ -128,14 +124,13 @@ export default function PayPage() {
       }
 
       if (data?.order_code) {
-        setConfirmedOrderCode(data.order_code);
         setOrder((prev) => (prev ? { ...prev, order_code: data.order_code } : prev));
       }
-      if (data?.warning) {
-        setUploadWarning(data.warning);
-      }
-      setUploadSuccess(true);
       setProofFile(null);
+      const code = data?.order_code ?? order?.order_code ?? orderId ?? order?.id;
+      if (code) {
+        router.push(`/track?code=${encodeURIComponent(String(code))}&success=1`);
+      }
     } catch {
       setUploadError('Gagal mengirim bukti pembayaran.');
     } finally {
@@ -159,86 +154,6 @@ export default function PayPage() {
 
       {loading && <p className="mt-6 text-sm text-slate-600">Memuat order...</p>}
       {error && <p className="mt-6 text-sm text-red-600">{error}</p>}
-
-      {uploadSuccess && order && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h2 className="text-xl font-semibold text-ink">Bukti terkirim</h2>
-            <p className="mt-3 text-sm text-slate-600">
-              Bukti pembayaran kamu sudah kami terima. Notifikasi juga sudah
-              dikirim ke WhatsApp kamu. Pesanan akan segera diproses.
-            </p>
-            {uploadWarning && (
-              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-                {uploadWarning}
-              </div>
-            )}
-            {confirmedOrderCode && (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                ID Order: <span className="font-semibold">{confirmedOrderCode}</span>
-              </div>
-            )}
-            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-              <div className="text-xs uppercase tracking-wide text-slate-500">
-                Detail Pesanan
-              </div>
-              <div className="mt-3 space-y-2">
-                {order.items.map((item) => (
-                  <div
-                    key={`popup-${item.id}`}
-                    className="flex items-start justify-between gap-4 text-sm"
-                  >
-                    <div>
-                      <div className="font-medium text-ink">
-                        {item.product_name_snapshot}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        {item.qty} x {formatRupiah(item.unit_price)}
-                      </div>
-                    </div>
-                    <div className="font-semibold text-ink">
-                      {formatRupiah(item.line_total)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 space-y-2 border-t border-slate-200 pt-3 text-sm">
-                <div className="flex items-center justify-between text-slate-600">
-                  <span>Subtotal</span>
-                  <span>{formatRupiah(subtotal)}</span>
-                </div>
-                {voucherDiscount > 0 && (
-                  <div className="flex items-center justify-between text-emerald-700">
-                    <span>
-                      Voucher {order.voucher_code ? `(${order.voucher_code})` : ''}
-                    </span>
-                    <span>-{formatRupiah(voucherDiscount)}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between font-semibold text-ink">
-                  <span>Total</span>
-                  <span>{formatRupiah(order.total_amount)}</span>
-                </div>
-              </div>
-            </div>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                onClick={() => setUploadSuccess(false)}
-                className="w-full rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-              >
-                Tutup
-              </button>
-              <Link
-                href="/"
-                className="w-full rounded-full bg-ink px-4 py-2 text-center text-sm font-semibold text-white"
-              >
-                Kembali ke katalog
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
 
       {order && (
         <div className="mt-8 space-y-6">
@@ -351,7 +266,6 @@ export default function PayPage() {
                       const file = event.target.files?.[0] ?? null;
                       setProofFile(file);
                       setUploadError(null);
-                      setUploadSuccess(false);
                     }}
                     className="sr-only"
                   />
@@ -376,21 +290,19 @@ export default function PayPage() {
                 <p className="text-sm text-red-600">{uploadError}</p>
               )}
 
-              {uploadSuccess && order && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                  Bukti pembayaran terkirim. Simpan ID Order:{' '}
-                  <span className="font-semibold">
-                    {confirmedOrderCode ?? order.order_code}
-                  </span>
-                </div>
-              )}
-
               <button
                 type="submit"
                 disabled={uploading || !proofFile}
                 className="w-full rounded-full bg-ink px-4 py-3 text-center text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
               >
-                {uploading ? 'Mengirim...' : 'Kirim Bukti Pembayaran'}
+                <span className="flex items-center justify-center gap-2">
+                  {uploading && (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  )}
+                  <span>
+                    {uploading ? 'process...' : 'Checkout'}
+                  </span>
+                </span>
               </button>
             </form>
           </div>

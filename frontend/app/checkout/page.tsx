@@ -60,7 +60,11 @@ export default function CheckoutPage() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setError(data.message ?? 'Checkout gagal. Silakan coba lagi.');
+        const stockMessage =
+          data?.errors?.items?.[0] ??
+          data?.errors?.product_id?.[0] ??
+          null;
+        setError(stockMessage ?? data.message ?? 'Checkout gagal. Silakan coba lagi.');
         return;
       }
 
@@ -131,7 +135,7 @@ export default function CheckoutPage() {
             disabled={loading}
             className="mt-6 w-full rounded-full bg-brand px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
-            {loading ? 'Memproses...' : 'Submit Checkout'}
+            {loading ? 'Memproses...' : 'Konfirmasi'}
           </button>
         </form>
       </div>

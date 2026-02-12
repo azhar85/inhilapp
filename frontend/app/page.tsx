@@ -4,12 +4,13 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import ProductCard from '@/components/ProductCard';
 import { useCart } from '@/hooks/useCart';
+import { formatRupiah } from '@/lib/formatRupiah';
 import type { Product, SiteSettings } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 
 export default function HomePage() {
-  const { addItem, count } = useCart();
+  const { addItem, count, totalAfterVoucher } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('Semua');
@@ -104,8 +105,14 @@ export default function HomePage() {
   const storeTagline = settings?.store_tagline ?? 'Premium App';
   const logoUrl = settings?.logo_url || '/logo.png';
 
+  const showCartBar = count > 0;
+
   return (
-    <main className="relative mx-auto max-w-6xl px-6 py-10">
+    <main
+      className={`relative mx-auto max-w-6xl px-6 py-10 ${
+        showCartBar ? 'pb-28' : ''
+      }`}
+    >
       <nav className="sticky top-4 z-30">
         <div className="rounded-3xl border border-white/70 bg-white/90 shadow-soft backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
@@ -133,31 +140,6 @@ export default function HomePage() {
                 className="rounded-full border border-ink/20 bg-white px-5 py-2 text-sm font-semibold text-ink transition hover:border-ink/40"
               >
                 Cek ID
-              </Link>
-              <Link
-                href="/cart"
-                className="relative grid h-11 w-11 place-items-center rounded-full bg-ink text-white transition hover:bg-slate-900"
-                aria-label={`Keranjang (${count})`}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="9" cy="20" r="1.6" />
-                  <circle cx="17" cy="20" r="1.6" />
-                  <path d="M3 4h2l2.6 11.2a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.6L21 8H7.2" />
-                </svg>
-                {count > 0 && (
-                  <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full bg-amber-500 text-[10px] font-semibold text-white">
-                    {count}
-                  </span>
-                )}
               </Link>
             </div>
           </div>
@@ -236,22 +218,48 @@ export default function HomePage() {
         )}
       </section>
 
-      <footer className="mt-16 pb-10">
-        <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-6 shadow-soft">
-          <div className="grid gap-6 sm:grid-cols-[1.2fr_1fr]">
+      <footer className="mt-16 pb-12">
+        <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-soft backdrop-blur sm:p-8">
+          <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr_1fr]">
             <div>
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                {storeName}
+              <div className="flex items-center gap-3">
+                <div className="grid h-11 w-11 place-items-center overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                  <img
+                    src={logoUrl}
+                    alt={storeName}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                    {storeName}
+                  </div>
+                  <div className="text-sm font-semibold text-ink">
+                    {storeTagline}
+                  </div>
+                </div>
               </div>
-              <p className="mt-3 text-sm text-slate-600">
+              <p className="mt-4 text-sm text-slate-600">
                 Katalog premium digital dengan proses cepat dan aman melalui
                 WhatsApp. Simpan ID order untuk pelacakan.
               </p>
-              <div className="mt-4 text-xs text-slate-400">
-                (c) {new Date().getFullYear()} {storeName}. All rights reserved.
+            </div>
+
+            <div>
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                Bantuan
+              </div>
+              <div className="mt-3 flex flex-col gap-2 text-sm font-semibold text-ink/70">
+                <Link href="/track" className="transition hover:text-ink">
+                  Cek ID Pesanan
+                </Link>
+                <Link href="/cart" className="transition hover:text-ink">
+                  Keranjang
+                </Link>
               </div>
             </div>
-            <div className="sm:justify-self-end">
+
+            <div>
               <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
                 Kontak
               </div>
@@ -275,8 +283,34 @@ export default function HomePage() {
               </div>
             </div>
           </div>
+
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-4 text-xs text-slate-400">
+            <div>
+              (c) {new Date().getFullYear()} {storeName}. All rights reserved.
+            </div>
+            <div>InhilApp Digital Store</div>
+          </div>
         </div>
       </footer>
+
+      {showCartBar && (
+        <div className="fixed inset-x-0 bottom-4 z-40 px-4">
+          <div className="mx-auto flex w-full max-w-4xl flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/90 px-4 py-3 shadow-soft backdrop-blur">
+            <div>
+              
+              <div className="mt-1 text-sm font-semibold text-ink">
+                {count} item - {formatRupiah(totalAfterVoucher)}
+              </div>
+            </div>
+            <Link
+              href="/cart"
+              className="inline-flex items-center justify-center rounded-full bg-ink px-5 py-2 text-sm font-semibold text-white transition hover:bg-slate-900"
+            >
+              Cek Keranjang
+            </Link>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

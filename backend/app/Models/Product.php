@@ -21,6 +21,7 @@ class Product extends Model
         'product_images',
         'discount_type',
         'discount_value',
+        'stock',
         'is_active',
     ];
 
@@ -29,5 +30,6 @@ class Product extends Model
         'is_active' => 'boolean',
         'product_images' => 'array',
         'discount_value' => 'integer',
+        'stock' => 'integer',
     ];
 }

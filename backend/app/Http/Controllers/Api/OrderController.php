@@ -28,6 +28,7 @@ class OrderController extends Controller
             $products = Product::query()
                 ->whereIn('id', $productIds)
                 ->where('is_active', true)
+                ->lockForUpdate()
                 ->get()
                 ->keyBy('id');
 
@@ -44,6 +45,13 @@ class OrderController extends Controller
             foreach ($items as $item) {
                 $product = $products->get($item['product_id']);
                 $qty = (int) $item['qty'];
+
+                if ($product->stock !== null && $qty > $product->stock) {
+                    throw ValidationException::withMessages([
+                        'items' => ["Stok {$product->name} tidak mencukupi."],
+                    ]);
+                }
+
                 $unitPrice = $this->applyDiscount($product->price, $product->discount_type, $product->discount_value);
                 $lineTotal = $unitPrice * $qty;
 
@@ -84,6 +92,14 @@ class OrderController extends Controller
             foreach ($orderItemsPayload as $payload) {
                 $payload['order_id'] = $order->id;
                 OrderItem::create($payload);
+            }
+
+            foreach ($items as $item) {
+                $product = $products->get($item['product_id']);
+                $qty = (int) $item['qty'];
+                if ($product->stock !== null) {
+                    $product->decrement('stock', $qty);
+                }
             }
 
             return response()->json([

@@ -136,6 +136,10 @@ class ProductController extends Controller
 
     private function validatePayload(Request $request, ?int $ignoreId): array
     {
+        if ($request->has('stock') && $request->input('stock') === '') {
+            $request->merge(['stock' => null]);
+        }
+
         $uniqueRule = 'unique:products,slug';
         if ($ignoreId) {
             $uniqueRule .= ',' . $ignoreId;
@@ -157,6 +161,7 @@ class ProductController extends Controller
             'gallery.*' => ['image', 'max:5120'],
             'discount_type' => ['nullable', 'in:PERCENT,FIXED'],
             'discount_value' => ['nullable', 'integer', 'min:0'],
+            'stock' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
         ]);
     }

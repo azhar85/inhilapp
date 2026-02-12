@@ -11,5 +11,6 @@ class SiteSetting extends Model
         'store_tagline',
         'logo_url',
         'qris_url',
+        'admin_whatsapp',
     ];
 }

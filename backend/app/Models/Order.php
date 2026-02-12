@@ -29,12 +29,14 @@ class Order extends Model
         'fulfillment_notes',
         'voucher_code',
         'voucher_discount',
+        'stock_restored_at',
     ];
 
     protected $casts = [
         'total_amount' => 'integer',
         'voucher_discount' => 'integer',
         'payment_proof_uploaded_at' => 'datetime',
+        'stock_restored_at' => 'datetime',
     ];
 
     public function items()

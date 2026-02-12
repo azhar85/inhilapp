@@ -23,6 +23,7 @@ class SiteSettingController extends Controller
         $data = $request->validate([
             'store_name' => ['nullable', 'string', 'max:255'],
             'store_tagline' => ['nullable', 'string', 'max:255'],
+            'admin_whatsapp' => ['nullable', 'string', 'max:30'],
             'logo' => ['nullable', 'image', 'max:5120'],
             'qris' => ['nullable', 'image', 'max:5120'],
             'remove_logo' => ['nullable', 'boolean'],
@@ -35,6 +36,10 @@ class SiteSettingController extends Controller
 
         if (array_key_exists('store_tagline', $data)) {
             $setting->store_tagline = $data['store_tagline'];
+        }
+
+        if (array_key_exists('admin_whatsapp', $data)) {
+            $setting->admin_whatsapp = $data['admin_whatsapp'];
         }
 
         if ($request->boolean('remove_logo')) {

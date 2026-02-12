@@ -33,6 +33,15 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
   const activeImage = images[activeIndex] ?? null;
   const coverImage = product.image_url ?? images[0] ?? null;
   const pricing = getPricing(product);
+  const stockValue =
+    typeof product.stock === 'number' ? product.stock : null;
+  const isOutOfStock = stockValue !== null && stockValue <= 0;
+  const stockLabel =
+    stockValue === null
+      ? 'Tersedia'
+      : stockValue > 0
+      ? `Sisa ${stockValue}`
+      : 'Stok habis';
 
   return (
     <>
@@ -79,16 +88,38 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
           </div>
         </div>
 
+        {stockValue !== null && (
+          <div className="absolute left-2 top-2 z-20 rounded-full border border-white/60 bg-white/80 px-2.5 py-1 text-[10px] font-semibold text-ink/80 shadow-sm backdrop-blur sm:left-3 sm:top-3">
+            {stockLabel}
+          </div>
+        )}
+
         <button
           type="button"
           onClick={(event) => {
             event.stopPropagation();
+            if (isOutOfStock) return;
             onAdd(product);
           }}
-          className="absolute bottom-2 right-2 z-20 grid h-7 w-7 place-items-center rounded-full bg-white text-xs font-semibold text-ink shadow-sm transition hover:bg-slate-100 sm:bottom-3 sm:right-3 sm:h-8 sm:w-8"
+          disabled={isOutOfStock}
+          className={`absolute bottom-2 right-2 z-20 grid h-8 w-8 place-items-center rounded-full border text-ink/80 shadow-sm backdrop-blur transition duration-150 sm:bottom-3 sm:right-3 sm:h-9 sm:w-9 ${
+            isOutOfStock
+              ? 'cursor-not-allowed border-slate-200 bg-white/60 text-slate-300'
+              : 'border-white/70 bg-white/70 hover:border-white hover:bg-white active:scale-95'
+          }`}
           aria-label={`Tambah ${product.name} ke keranjang`}
         >
-          +
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
         </button>
       </div>
 
@@ -104,16 +135,16 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
             aria-label="Tutup modal"
           />
 
-          <div className="relative z-10 w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl sm:rounded-3xl">
+          <div className="relative z-10 w-full max-w-5xl overflow-hidden rounded-3xl border border-white/70 bg-white/95 shadow-2xl">
             <div className="grid max-h-[90vh] grid-rows-[auto,1fr] lg:max-h-[85vh] lg:grid-cols-[1.1fr_0.9fr] lg:grid-rows-1">
-              <div className="relative bg-slate-100">
+              <div className="relative bg-gradient-to-br from-slate-100 via-white to-slate-50">
                 <button
                   type="button"
                   onClick={() => {
                     setOpen(false);
                     setActiveIndex(0);
                   }}
-                  className="absolute right-3 top-3 z-20 grid h-8 w-8 place-items-center rounded-full bg-white/90 text-xs font-semibold text-ink shadow"
+                  className="absolute right-3 top-3 z-20 grid h-8 w-8 place-items-center rounded-full bg-white/90 text-xs font-semibold text-ink shadow transition hover:scale-105 active:scale-95"
                   aria-label="Tutup"
                 >
                   X
@@ -141,7 +172,7 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
                             prev === 0 ? images.length - 1 : prev - 1
                           )
                         }
-                        className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 px-3 py-2 text-sm font-semibold text-ink shadow"
+                        className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 px-3 py-2 text-sm font-semibold text-ink shadow transition hover:scale-105 active:scale-95"
                         aria-label="Gambar sebelumnya"
                       >
                         {'<'}
@@ -153,7 +184,7 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
                             prev === images.length - 1 ? 0 : prev + 1
                           )
                         }
-                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 px-3 py-2 text-sm font-semibold text-ink shadow"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 px-3 py-2 text-sm font-semibold text-ink shadow transition hover:scale-105 active:scale-95"
                         aria-label="Gambar berikutnya"
                       >
                         {'>'}
@@ -169,7 +200,7 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
                         key={`thumb-${product.id}-${index}`}
                         type="button"
                         onClick={() => setActiveIndex(index)}
-                        className={`h-12 w-12 overflow-hidden rounded-2xl border ${
+                        className={`h-12 w-12 overflow-hidden rounded-2xl border transition ${
                           index === activeIndex ? 'border-ink' : 'border-transparent'
                         }`}
                         aria-label={`Lihat gambar ${index + 1}`}
@@ -193,8 +224,15 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
                   <h3 className="mt-2 text-2xl font-semibold text-ink">
                     {product.name}
                   </h3>
-                  <div className="mt-1 text-sm text-slate-600">
-                    {product.category ?? 'Digital'}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                      {product.category ?? 'Digital'}
+                    </span>
+                    {pricing.discountAmount > 0 && (
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                        Hemat {formatRupiah(pricing.discountAmount)}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -232,6 +270,18 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
                       {product.warranty ?? 'Tidak ada informasi garansi.'}
                     </div>
                   </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">
+                      Stok
+                    </div>
+                    <div className="mt-2 font-semibold text-ink">
+                      {stockValue === null
+                        ? 'Tersedia'
+                        : stockValue > 0
+                        ? `${stockValue} tersedia`
+                        : 'Stok habis'}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
@@ -242,17 +292,23 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
                   <button
                     type="button"
                     onClick={() => {
+                      if (isOutOfStock) return;
                       onAdd(product);
                       setOpen(false);
                     }}
-                    className="rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white"
+                    disabled={isOutOfStock}
+                    className={`rounded-full px-5 py-3 text-sm font-semibold shadow-lg transition ${
+                      isOutOfStock
+                        ? 'cursor-not-allowed bg-slate-200 text-slate-500 shadow-none'
+                        : 'bg-ink text-white shadow-ink/20 hover:-translate-y-0.5 hover:bg-slate-900 active:translate-y-0 active:scale-[0.99]'
+                    }`}
                   >
-                    Tambah ke Keranjang
+                    {isOutOfStock ? 'Stok Habis' : 'Tambah ke Keranjang'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setOpen(false)}
-                    className="text-sm font-semibold text-slate-600"
+                    className="text-sm font-semibold text-slate-600 transition hover:text-ink"
                   >
                     Tutup
                   </button>

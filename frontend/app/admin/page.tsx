@@ -14,6 +14,7 @@ type ProductFormState = {
   id?: number;
   name: string;
   price: string;
+  stock: string;
   category: string;
   description: string;
   duration: string;
@@ -54,11 +55,13 @@ type StockFormState = {
 type SettingsFormState = {
   store_name: string;
   store_tagline: string;
+  admin_whatsapp: string;
 };
 
 const defaultProductForm: ProductFormState = {
   name: '',
   price: '',
+  stock: '',
   category: '',
   description: '',
   duration: '',
@@ -97,6 +100,7 @@ const defaultStockForm: StockFormState = {
 const defaultSettingsForm: SettingsFormState = {
   store_name: '',
   store_tagline: '',
+  admin_whatsapp: '',
 };
 
 export default function AdminPage() {
@@ -147,8 +151,6 @@ export default function AdminPage() {
   const [isEditingStock, setIsEditingStock] = useState(false);
   const [stockDetail, setStockDetail] = useState<Stock | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const filterActiveProducts = (items: Product[]) =>
-    items.filter((item) => item.is_active !== false);
 
   const orderFilters = useMemo(() => {
     const params = new URLSearchParams();
@@ -208,7 +210,7 @@ export default function AdminPage() {
             settingRes.json(),
           ]);
 
-        setProducts(filterActiveProducts(productData));
+        setProducts(productData);
         setOrders(orderData);
         setVouchers(voucherData);
         setStocks(stockData);
@@ -216,6 +218,7 @@ export default function AdminPage() {
         setSettingsForm({
           store_name: settingData?.store_name ?? '',
           store_tagline: settingData?.store_tagline ?? '',
+          admin_whatsapp: settingData?.admin_whatsapp ?? '',
         });
         setExistingLogo(settingData?.logo_url ?? null);
         setExistingQris(settingData?.qris_url ?? null);
@@ -313,6 +316,7 @@ export default function AdminPage() {
       const formData = new FormData();
       formData.append('name', productForm.name.trim());
       formData.append('price', String(Number(productForm.price || 0)));
+      formData.append('stock', productForm.stock.trim());
       if (productForm.category.trim())
         formData.append('category', productForm.category.trim());
       if (productForm.description.trim())
@@ -368,7 +372,7 @@ export default function AdminPage() {
       }
 
       const refreshed = await adminFetch(`${API_BASE}/api/admin/products`);
-      setProducts(filterActiveProducts(await refreshed.json()));
+      setProducts(await refreshed.json());
       resetProductForm();
       setShowProductModal(false);
       setSuccessMessage('Produk tersimpan.');
@@ -382,6 +386,10 @@ export default function AdminPage() {
       id: product.id,
       name: product.name ?? '',
       price: String(product.price ?? ''),
+      stock:
+        product.stock === null || product.stock === undefined
+          ? ''
+          : String(product.stock),
       category: product.category ?? '',
       description: product.description ?? '',
       duration: product.duration ?? '',
@@ -409,6 +417,59 @@ export default function AdminPage() {
     setShowProductModal(true);
   };
 
+  const handleToggleProductStatus = async (product: Product) => {
+    if (actionLoading) return;
+    setActionLoading('Mengubah status produk...');
+    setError(null);
+    try {
+      const nextActive = !product.is_active;
+      const payload: Record<string, unknown> = {
+        name: product.name ?? '',
+        price: product.price ?? 0,
+        is_active: nextActive,
+      };
+
+      if (product.category) payload.category = product.category;
+      if (product.description) payload.description = product.description;
+      if (product.duration) payload.duration = product.duration;
+      if (product.warranty) payload.warranty = product.warranty;
+      if (product.discount_type) payload.discount_type = product.discount_type;
+      if (product.discount_value !== null && product.discount_value !== undefined) {
+        payload.discount_value = product.discount_value;
+      }
+
+      const response = await adminFetch(
+        `${API_BASE}/api/admin/products/${product.id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!response.ok) {
+        setError('Gagal mengubah status produk.');
+        return;
+      }
+
+      const updated = await response.json().catch(() => null);
+      if (updated?.id) {
+        setProducts((prev) =>
+          prev.map((item) => (item.id === product.id ? updated : item))
+        );
+      } else {
+        setProducts((prev) =>
+          prev.map((item) =>
+            item.id === product.id ? { ...item, is_active: nextActive } : item
+          )
+        );
+      }
+      setSuccessMessage(nextActive ? 'Produk diaktifkan.' : 'Produk dinonaktifkan.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleDeleteProduct = async (productId: number) => {
     if (!productId) return;
     if (!window.confirm('Hapus produk ini?')) return;
@@ -431,7 +492,11 @@ export default function AdminPage() {
 
       const payload = await response.json();
       if (payload?.action === 'deactivated') {
-        setProducts((prev) => prev.filter((item) => item.id !== productId));
+        setProducts((prev) =>
+          prev.map((item) =>
+            item.id === productId ? { ...item, is_active: false } : item
+          )
+        );
         setSuccessMessage(payload.message ?? 'Produk dinonaktifkan.');
       } else {
         setProducts((prev) => prev.filter((item) => item.id !== productId));
@@ -642,6 +707,12 @@ export default function AdminPage() {
         payload.append('store_tagline', '');
       }
 
+      if (settingsForm.admin_whatsapp.trim()) {
+        payload.append('admin_whatsapp', settingsForm.admin_whatsapp.trim());
+      } else {
+        payload.append('admin_whatsapp', '');
+      }
+
       if (logoFile) {
         payload.append('logo', logoFile);
       }
@@ -670,6 +741,7 @@ export default function AdminPage() {
       setSettingsForm({
         store_name: data?.store_name ?? '',
         store_tagline: data?.store_tagline ?? '',
+        admin_whatsapp: data?.admin_whatsapp ?? '',
       });
       setExistingLogo(data?.logo_url ?? null);
       setExistingQris(data?.qris_url ?? null);
@@ -994,28 +1066,57 @@ export default function AdminPage() {
             </div>
             <div className="mt-4 space-y-3">
               {products.map((product) => (
-                <button
+                <div
                   key={product.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => handleEditProduct(product)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handleEditProduct(product);
+                    }
+                  }}
                   className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-slate-300"
                 >
                   <div>
                     <div className="text-sm font-semibold text-ink">{product.name}</div>
-                    <div className="text-xs text-slate-500">
-                      {product.category ?? 'Tanpa kategori'} - {formatRupiah(product.price)}
+                      <div className="text-xs text-slate-500">
+                        {product.category ?? 'Tanpa kategori'} - {formatRupiah(product.price)} ·{' '}
+                        {product.stock === null || product.stock === undefined
+                          ? 'Stok: unlimited'
+                          : product.stock > 0
+                          ? `Stok: ${product.stock}`
+                          : 'Stok: habis'}
+                      </div>
                     </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleToggleProductStatus(product);
+                      }}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
+                        product.is_active ? 'bg-emerald-200' : 'bg-slate-200'
+                      }`}
+                      aria-pressed={product.is_active}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 rounded-full bg-white shadow transition ${
+                          product.is_active ? 'translate-x-4' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                    <span
+                      className={
+                        product.is_active ? 'text-emerald-700' : 'text-slate-500'
+                      }
+                    >
+                      {product.is_active ? 'Aktif' : 'Nonaktif'}
+                    </span>
                   </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      product.is_active
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-slate-100 text-slate-500'
-                    }`}
-                  >
-                    {product.is_active ? 'Aktif' : 'Nonaktif'}
-                  </span>
-                </button>
+                </div>
               ))}
             </div>
           </div>
@@ -1253,26 +1354,26 @@ export default function AdminPage() {
 
       {activeTab === 'settings' && (
         <section className="mt-8">
-          <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-soft">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-soft sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="text-lg font-semibold text-ink">Pengaturan Toko</h2>
               <button
                 type="button"
                 onClick={handleSaveSettings}
                 disabled={isBusy}
-                className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="w-full rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300 sm:w-auto"
               >
                 {isBusy ? 'Menyimpan...' : 'Simpan Perubahan'}
               </button>
             </div>
 
             <div className="mt-5 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="space-y-4">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Nama Toko
-                  </div>
-                  <input
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Nama Toko
+                    </div>
+                    <input
                     value={settingsForm.store_name}
                     onChange={(event) =>
                       setSettingsForm((prev) => ({
@@ -1284,57 +1385,82 @@ export default function AdminPage() {
                     className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                   />
                 </div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Tagline (opsional)
-                  </div>
-                  <input
-                    value={settingsForm.store_tagline}
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Tagline (opsional)
+                    </div>
+                    <input
+                      value={settingsForm.store_tagline}
                     onChange={(event) =>
                       setSettingsForm((prev) => ({
                         ...prev,
                         store_tagline: event.target.value,
                       }))
                     }
-                    placeholder="Contoh: Premium App"
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
-                  />
-                </div>
+                      placeholder="Contoh: Premium App"
+                      className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      WhatsApp Admin
+                    </div>
+                    <input
+                      value={settingsForm.admin_whatsapp}
+                      onChange={(event) =>
+                        setSettingsForm((prev) => ({
+                          ...prev,
+                          admin_whatsapp: event.target.value,
+                        }))
+                      }
+                      placeholder="Contoh: 6281234567890"
+                      className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                    />
+                    <p className="mt-2 text-xs text-slate-500">
+                      Nomor ini dipakai untuk bantuan pelanggan di halaman cek pesanan.
+                    </p>
+                  </div>
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-4 text-xs text-slate-500">
                   Gambar logo dan QRIS akan digunakan di halaman pelanggan.
                 </div>
               </div>
 
-              <div className="space-y-5">
+              <div className="space-y-4">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                     Logo Toko
                   </div>
-                  <div className="mt-3 flex items-center gap-4">
+                  <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center">
                     {logoPreview ? (
                       <img
                         src={logoPreview}
                         alt="Logo toko"
-                        className="h-16 w-16 rounded-2xl border border-slate-200 object-cover"
+                        className="h-20 w-20 rounded-2xl border border-slate-200 object-cover"
                       />
                     ) : (
-                      <div className="grid h-16 w-16 place-items-center rounded-2xl border border-dashed border-slate-200 text-[11px] text-slate-400">
+                      <div className="grid h-20 w-20 place-items-center rounded-2xl border border-dashed border-slate-200 text-[11px] text-slate-400">
                         Tidak ada
                       </div>
                     )}
                     <div className="flex flex-col gap-2">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0] ?? null;
-                          setLogoFile(file);
-                          if (file) {
-                            setRemoveLogo(false);
-                          }
-                        }}
-                        className="text-xs"
-                      />
+                      <label className="inline-flex w-fit cursor-pointer items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300">
+                        Upload logo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0] ?? null;
+                            setLogoFile(file);
+                            if (file) {
+                              setRemoveLogo(false);
+                            }
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                      {logoFile?.name && (
+                        <div className="text-xs text-slate-500">{logoFile.name}</div>
+                      )}
                       {(logoPreview || existingLogo) && (
                         <button
                           type="button"
@@ -1356,31 +1482,37 @@ export default function AdminPage() {
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                     QRIS
                   </div>
-                  <div className="mt-3 flex items-center gap-4">
+                  <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center">
                     {qrisPreview ? (
                       <img
                         src={qrisPreview}
                         alt="QRIS"
-                        className="h-20 w-20 rounded-2xl border border-slate-200 object-cover"
+                        className="h-24 w-24 rounded-2xl border border-slate-200 object-cover"
                       />
                     ) : (
-                      <div className="grid h-20 w-20 place-items-center rounded-2xl border border-dashed border-slate-200 text-[11px] text-slate-400">
+                      <div className="grid h-24 w-24 place-items-center rounded-2xl border border-dashed border-slate-200 text-[11px] text-slate-400">
                         Tidak ada
                       </div>
                     )}
                     <div className="flex flex-col gap-2">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0] ?? null;
-                          setQrisFile(file);
-                          if (file) {
-                            setRemoveQris(false);
-                          }
-                        }}
-                        className="text-xs"
-                      />
+                      <label className="inline-flex w-fit cursor-pointer items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300">
+                        Upload QRIS
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0] ?? null;
+                            setQrisFile(file);
+                            if (file) {
+                              setRemoveQris(false);
+                            }
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                      {qrisFile?.name && (
+                        <div className="text-xs text-slate-500">{qrisFile.name}</div>
+                      )}
                       {(qrisPreview || existingQris) && (
                         <button
                           type="button"
@@ -2305,6 +2437,14 @@ export default function AdminPage() {
                   className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
                 />
                 <input
+                  value={productForm.stock}
+                  onChange={(event) =>
+                    setProductForm((prev) => ({ ...prev, stock: event.target.value }))
+                  }
+                  placeholder="Stok (kosong = unlimited)"
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                />
+                <input
                   value={productForm.category}
                   onChange={(event) =>
                     setProductForm((prev) => ({ ...prev, category: event.target.value }))
@@ -2513,19 +2653,6 @@ export default function AdminPage() {
                     className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
                   />
                 </div>
-                <label className="flex items-center gap-2 text-sm text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={productForm.is_active}
-                    onChange={(event) =>
-                      setProductForm((prev) => ({
-                        ...prev,
-                        is_active: event.target.checked,
-                      }))
-                    }
-                  />
-                  Produk aktif
-                </label>
                 <div className="flex flex-wrap gap-2">
                 <button
                   type="button"

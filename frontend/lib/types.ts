@@ -11,6 +11,7 @@ export type Product = {
   product_images?: string[] | null;
   discount_type?: 'PERCENT' | 'FIXED' | null;
   discount_value?: number | null;
+  stock?: number | null;
   is_active: boolean;
 };
 
@@ -20,6 +21,7 @@ export type SiteSettings = {
   store_tagline?: string | null;
   logo_url?: string | null;
   qris_url?: string | null;
+  admin_whatsapp?: string | null;
 };
 
 export type OrderItem = {

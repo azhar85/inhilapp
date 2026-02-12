@@ -12,6 +12,7 @@ export type CartItem = {
   discountAmount: number;
   discountLabel: string | null;
   image_url?: string | null;
+  stock?: number | null;
   qty: number;
 };
 
@@ -71,6 +72,7 @@ function loadCart(): StoredCart {
         price,
         discountAmount,
         discountLabel,
+        stock: item.stock ?? null,
       };
     });
     return { items: normalizedItems, voucher: stored.voucher ?? null };
@@ -116,14 +118,32 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addItem = (product: Product, qty = 1) => {
     const pricing = getPricing(product);
+    const stock = typeof product.stock === 'number' ? product.stock : null;
     setItems((prev) => {
       const existing = prev.find((item) => item.product_id === product.id);
       if (existing) {
+        const nextQty = existing.qty + qty;
+        const cappedQty = stock === null ? nextQty : Math.min(nextQty, stock);
+        if (cappedQty <= 0 || cappedQty === existing.qty) {
+          return prev.map((item) =>
+            item.product_id === product.id
+              ? { ...item, stock: stock ?? item.stock ?? null }
+              : item
+          );
+        }
         return prev.map((item) =>
           item.product_id === product.id
-            ? { ...item, qty: item.qty + qty }
+            ? {
+                ...item,
+                qty: cappedQty,
+                stock: stock ?? item.stock ?? null,
+              }
             : item
         );
+      }
+
+      if (stock !== null && stock <= 0) {
+        return prev;
       }
 
       return [
@@ -136,7 +156,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           discountAmount: pricing.discountAmount,
           discountLabel: pricing.discountLabel,
           image_url: product.image_url ?? null,
-          qty,
+          stock,
+          qty: stock === null ? qty : Math.min(qty, stock),
         },
       ];
     });
@@ -145,14 +166,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const updateQty = (productId: number, qty: number) => {
     setItems((prev) => {
-      if (qty <= 0) {
-        return prev.filter((item) => item.product_id !== productId);
-      }
-
       return prev.map((item) =>
-        item.product_id === productId ? { ...item, qty } : item
+        item.product_id === productId
+          ? {
+              ...item,
+              qty:
+                item.stock === null || item.stock === undefined
+                  ? qty
+                  : Math.min(qty, item.stock),
+            }
+          : item
       );
-    });
+    }).filter((item) => item.qty > 0);
     clearVoucher();
   };
 

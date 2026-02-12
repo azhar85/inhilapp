@@ -63,10 +63,40 @@ class OrderController extends Controller
         $order->save();
 
         if (array_key_exists('status', $data) && $data['status'] !== $previousStatus) {
+            $this->restoreStockIfNeeded($order, $data['status'], $previousStatus);
             $this->notifyCustomerStatus($order, $data['status']);
         }
 
         return response()->json($order);
+    }
+
+    private function restoreStockIfNeeded(Order $order, string $status, string $previousStatus): void
+    {
+        $restoreStatuses = ['INVALID_PAYMENT', 'REFUND', 'CANCELLED'];
+        if (! in_array($status, $restoreStatuses, true)) {
+            return;
+        }
+
+        if ($order->stock_restored_at) {
+            return;
+        }
+
+        $order->loadMissing('items.product');
+
+        foreach ($order->items as $item) {
+            $product = $item->product;
+            if (! $product) {
+                continue;
+            }
+            if ($product->stock === null) {
+                continue;
+            }
+
+            $product->increment('stock', $item->qty);
+        }
+
+        $order->stock_restored_at = now();
+        $order->save();
     }
 
     private function notifyCustomerStatus(Order $order, string $status): void

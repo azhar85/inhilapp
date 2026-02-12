@@ -207,14 +207,6 @@ export default function TrackClient() {
                   {orderDate ?? '-'}
                 </div>
               </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-400">
-                  Jumlah Item
-                </div>
-                <div className="mt-2 text-sm font-semibold text-ink">
-                  {itemCount} item
-                </div>
-              </div>
             </div>
           </div>
 
