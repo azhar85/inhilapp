@@ -9,7 +9,6 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\Voucher;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
@@ -28,7 +27,6 @@ class OrderController extends Controller
             $products = Product::query()
                 ->whereIn('id', $productIds)
                 ->where('is_active', true)
-                ->lockForUpdate()
                 ->get()
                 ->keyBy('id');
 
@@ -45,14 +43,11 @@ class OrderController extends Controller
             foreach ($items as $item) {
                 $product = $products->get($item['product_id']);
                 $qty = (int) $item['qty'];
+                $flashRequested = (bool) ($item['is_flash_sale'] ?? false);
 
-                if ($product->stock !== null && $qty > $product->stock) {
-                    throw ValidationException::withMessages([
-                        'items' => ["Stok {$product->name} tidak mencukupi."],
-                    ]);
-                }
+                $flashSaleAvailable = $flashRequested && $this->isFlashSaleWindow($product);
 
-                $unitPrice = $this->applyDiscount($product->price, $product->discount_type, $product->discount_value);
+                $unitPrice = $this->resolveUnitPrice($product, $flashSaleAvailable);
                 $lineTotal = $unitPrice * $qty;
 
                 $orderItemsPayload[] = [
@@ -61,6 +56,7 @@ class OrderController extends Controller
                     'unit_price' => $unitPrice,
                     'qty' => $qty,
                     'line_total' => $lineTotal,
+                    'is_flash_sale' => $flashSaleAvailable,
                 ];
 
                 $subTotal += $lineTotal;
@@ -92,14 +88,6 @@ class OrderController extends Controller
             foreach ($orderItemsPayload as $payload) {
                 $payload['order_id'] = $order->id;
                 OrderItem::create($payload);
-            }
-
-            foreach ($items as $item) {
-                $product = $products->get($item['product_id']);
-                $qty = (int) $item['qty'];
-                if ($product->stock !== null) {
-                    $product->decrement('stock', $qty);
-                }
             }
 
             return response()->json([
@@ -148,6 +136,44 @@ class OrderController extends Controller
         }
 
         return $price - $discount;
+    }
+
+    private function resolveUnitPrice(Product $product, bool $useFlashSale): int
+    {
+        if ($useFlashSale) {
+            return $this->applyDiscount(
+                $product->price,
+                $product->flash_sale_discount_type,
+                $product->flash_sale_discount_value
+            );
+        }
+
+        return $this->applyDiscount(
+            $product->price,
+            $product->discount_type,
+            $product->discount_value
+        );
+    }
+
+    private function isFlashSaleWindow(Product $product): bool
+    {
+        if (! $product->flash_sale_active) {
+            return false;
+        }
+
+        if (! $product->flash_sale_discount_type || ! $product->flash_sale_discount_value) {
+            return false;
+        }
+
+        $now = now();
+        if ($product->flash_sale_start_at && $now->lt($product->flash_sale_start_at)) {
+            return false;
+        }
+        if ($product->flash_sale_end_at && $now->gt($product->flash_sale_end_at)) {
+            return false;
+        }
+
+        return true;
     }
 
     private function resolveVoucher(string $code, int $subtotal): array
@@ -203,20 +229,6 @@ class OrderController extends Controller
         }
 
         return [$voucher, $discount];
-    }
-
-    private function generateOrderCode(): string
-    {
-        $prefix = 'APP-';
-
-        for ($i = 0; $i < 40; $i++) {
-            $code = $prefix . strtoupper(Str::random(5));
-            if (! Order::where('order_code', $code)->exists()) {
-                return $code;
-            }
-        }
-
-        return $prefix . strtoupper(Str::random(8));
     }
 
 }

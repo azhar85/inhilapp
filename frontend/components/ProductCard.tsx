@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Product } from '@/lib/types';
 import { formatRupiah } from '@/lib/formatRupiah';
 import { getPricing } from '@/lib/pricing';
@@ -8,9 +9,26 @@ import { getPricing } from '@/lib/pricing';
 type ProductCardProps = {
   product: Product;
   onAdd: (product: Product) => void;
+  priceOverride?: number;
+  originalPriceOverride?: number;
+  stockOverride?: number | null;
+  disableAdd?: boolean;
+  hideAdd?: boolean;
+  frameMode?: 'default' | 'embedded';
+  compact?: boolean;
 };
 
-export default function ProductCard({ product, onAdd }: ProductCardProps) {
+export default function ProductCard({
+  product,
+  onAdd,
+  priceOverride,
+  originalPriceOverride,
+  stockOverride,
+  disableAdd = false,
+  hideAdd = false,
+  frameMode = 'default',
+  compact = false,
+}: ProductCardProps) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -32,10 +50,34 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
 
   const activeImage = images[activeIndex] ?? null;
   const coverImage = product.image_url ?? images[0] ?? null;
-  const pricing = getPricing(product);
+  const pricing = useMemo(() => {
+    if (priceOverride !== undefined || originalPriceOverride !== undefined) {
+      const originalPrice = originalPriceOverride ?? product.price;
+      const finalPrice = priceOverride ?? originalPrice;
+      const discountAmount = Math.max(originalPrice - finalPrice, 0);
+      return {
+        originalPrice,
+        finalPrice,
+        discountAmount,
+        discountLabel: discountAmount > 0 ? 'Flash Sale' : null,
+      };
+    }
+    return getPricing(product);
+  }, [priceOverride, originalPriceOverride, product]);
+
   const stockValue =
-    typeof product.stock === 'number' ? product.stock : null;
+    typeof stockOverride === 'number'
+      ? stockOverride
+      : typeof product.stock === 'number'
+      ? product.stock
+      : null;
   const isOutOfStock = stockValue !== null && stockValue <= 0;
+  const isAddDisabled = disableAdd || isOutOfStock;
+  const addButtonLabel = isOutOfStock
+    ? 'Stok Habis'
+    : disableAdd
+    ? 'Flash Sale Belum Dimulai'
+    : 'Tambah ke Keranjang';
   const stockLabel =
     stockValue === null
       ? 'Tersedia'
@@ -45,7 +87,15 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
 
   return (
     <>
-      <div className="group relative aspect-square w-full max-w-[220px] justify-self-start overflow-hidden rounded-3xl border border-white/70 bg-slate-100 shadow-soft transition hover:-translate-y-1 hover:shadow-2xl">
+      <div
+        className={`group relative aspect-square w-full justify-self-start overflow-hidden bg-slate-100 transition ${
+          compact ? 'max-w-[126px] sm:max-w-[170px]' : 'max-w-[220px]'
+        } ${
+          frameMode === 'embedded'
+            ? 'rounded-[18px] border border-slate-200 shadow-none hover:-translate-y-0 hover:shadow-none'
+            : 'rounded-3xl border border-white/70 shadow-soft hover:-translate-y-1 hover:shadow-2xl'
+        }`}
+      >
         {coverImage ? (
           <img
             src={coverImage}
@@ -59,7 +109,7 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
           </div>
         )}
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-black/0" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/0" />
 
         <button
           type="button"
@@ -68,12 +118,16 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
           aria-label={`Lihat detail ${product.name}`}
         />
 
-        <div className="absolute inset-x-0 bottom-0 p-2 sm:p-3">
-          <h3 className="line-clamp-2 pr-12 text-[11px] font-semibold leading-tight text-white sm:text-sm">
+        <div className={`absolute inset-x-0 bottom-0 ${compact ? 'p-2 sm:p-2.5' : 'p-2 sm:p-3'}`}>
+          <h3
+            className={`line-clamp-2 font-semibold leading-tight text-white ${
+              compact ? 'pr-10 text-[10px] sm:text-xs' : 'pr-12 text-[11px] sm:text-sm'
+            }`}
+          >
             {product.name}
           </h3>
           <div className="mt-2 flex items-center justify-between gap-2">
-            <div className="text-[10px] font-semibold text-white/90 sm:text-xs">
+            <div className={`font-semibold text-white/90 ${compact ? 'text-[10px] sm:text-[11px]' : 'text-[10px] sm:text-xs'}`}>
               {pricing.discountAmount > 0 ? (
                 <div className="flex flex-col">
                   <span className="line-through text-white/60">
@@ -89,41 +143,55 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
         </div>
 
         {stockValue !== null && (
-          <div className="absolute left-2 top-2 z-20 rounded-full border border-white/60 bg-white/80 px-2.5 py-1 text-[10px] font-semibold text-ink/80 shadow-sm backdrop-blur sm:left-3 sm:top-3">
+          <div
+            className={`absolute z-20 rounded-full border border-white/60 bg-white/85 font-semibold text-ink/80 shadow-sm backdrop-blur ${
+              compact
+                ? 'left-2 top-2 px-2 py-0.5 text-[9px] sm:left-2.5 sm:top-2.5 sm:px-2.5 sm:text-[10px]'
+                : 'left-2 top-2 px-2.5 py-1 text-[10px] sm:left-3 sm:top-3'
+            }`}
+          >
             {stockLabel}
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            if (isOutOfStock) return;
-            onAdd(product);
-          }}
-          disabled={isOutOfStock}
-          className={`absolute bottom-2 right-2 z-20 grid h-8 w-8 place-items-center rounded-full border text-ink/80 shadow-sm backdrop-blur transition duration-150 sm:bottom-3 sm:right-3 sm:h-9 sm:w-9 ${
-            isOutOfStock
-              ? 'cursor-not-allowed border-slate-200 bg-white/60 text-slate-300'
-              : 'border-white/70 bg-white/70 hover:border-white hover:bg-white active:scale-95'
-          }`}
-          aria-label={`Tambah ${product.name} ke keranjang`}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
+        {!hideAdd && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (isAddDisabled) return;
+              onAdd(product);
+            }}
+            disabled={isAddDisabled}
+            className={`absolute z-20 grid place-items-center rounded-full border text-ink/80 shadow-sm backdrop-blur transition duration-150 ${
+              compact
+                ? 'bottom-2 right-2 h-8 w-8 sm:bottom-2.5 sm:right-2.5 sm:h-9 sm:w-9'
+                : 'bottom-2 right-2 h-8 w-8 sm:bottom-3 sm:right-3 sm:h-9 sm:w-9'
+            } ${
+              isAddDisabled
+                ? 'cursor-not-allowed border-slate-200 bg-white/60 text-slate-300'
+                : 'border-white/70 bg-white/70 hover:border-white hover:bg-white active:scale-95'
+            }`}
+            aria-label={`Tambah ${product.name} ke keranjang`}
           >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-        </button>
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className={compact ? 'h-4 w-4' : 'h-4 w-4'}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+        )}
       </div>
 
-      {open && (
+      {open &&
+        typeof document !== 'undefined' &&
+        createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-6 backdrop-blur-sm">
           <button
             type="button"
@@ -292,18 +360,18 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
                   <button
                     type="button"
                     onClick={() => {
-                      if (isOutOfStock) return;
+                      if (isAddDisabled) return;
                       onAdd(product);
                       setOpen(false);
                     }}
-                    disabled={isOutOfStock}
+                    disabled={isAddDisabled}
                     className={`rounded-full px-5 py-3 text-sm font-semibold shadow-lg transition ${
-                      isOutOfStock
+                      isAddDisabled
                         ? 'cursor-not-allowed bg-slate-200 text-slate-500 shadow-none'
                         : 'bg-ink text-white shadow-ink/20 hover:-translate-y-0.5 hover:bg-slate-900 active:translate-y-0 active:scale-[0.99]'
                     }`}
                   >
-                    {isOutOfStock ? 'Stok Habis' : 'Tambah ke Keranjang'}
+                    {addButtonLabel}
                   </button>
                   <button
                     type="button"
@@ -316,7 +384,8 @@ export default function ProductCard({ product, onAdd }: ProductCardProps) {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

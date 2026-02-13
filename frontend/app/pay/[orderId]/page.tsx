@@ -112,6 +112,9 @@ export default function PayPage() {
         `${API_BASE}/api/orders/${orderId}/payment-proof`,
         {
           method: 'POST',
+          headers: {
+            Accept: 'application/json',
+          },
           body: formData,
         }
       );

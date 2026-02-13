@@ -55,6 +55,7 @@ class ProductController extends Controller
         }
 
         $data['is_active'] = $data['is_active'] ?? true;
+        $this->normalizeFlashSale($request, $data);
 
         if ($request->hasFile('image')) {
             $data['image_url'] = $this->storeImage($request->file('image'));
@@ -81,6 +82,8 @@ class ProductController extends Controller
             $data['discount_type'] = null;
             $data['discount_value'] = 0;
         }
+
+        $this->normalizeFlashSale($request, $data);
 
         if ($request->boolean('remove_image')) {
             $data['image_url'] = null;
@@ -139,6 +142,15 @@ class ProductController extends Controller
         if ($request->has('stock') && $request->input('stock') === '') {
             $request->merge(['stock' => null]);
         }
+        if ($request->has('flash_sale_discount_value') && $request->input('flash_sale_discount_value') === '') {
+            $request->merge(['flash_sale_discount_value' => null]);
+        }
+        if ($request->has('flash_sale_stock') && $request->input('flash_sale_stock') === '') {
+            $request->merge(['flash_sale_stock' => null]);
+        }
+        if ($request->has('max_qty_per_customer') && $request->input('max_qty_per_customer') === '') {
+            $request->merge(['max_qty_per_customer' => null]);
+        }
 
         $uniqueRule = 'unique:products,slug';
         if ($ignoreId) {
@@ -162,8 +174,40 @@ class ProductController extends Controller
             'discount_type' => ['nullable', 'in:PERCENT,FIXED'],
             'discount_value' => ['nullable', 'integer', 'min:0'],
             'stock' => ['nullable', 'integer', 'min:0'],
+            'flash_sale_active' => ['nullable', 'boolean'],
+            'flash_sale_discount_type' => ['nullable', 'in:PERCENT,FIXED'],
+            'flash_sale_discount_value' => ['nullable', 'integer', 'min:0'],
+            'flash_sale_start_at' => ['nullable', 'date'],
+            'flash_sale_end_at' => ['nullable', 'date'],
+            'flash_sale_stock' => ['nullable', 'integer', 'min:0'],
+            'max_qty_per_customer' => ['nullable', 'integer', 'min:1'],
             'is_active' => ['nullable', 'boolean'],
         ]);
+    }
+
+    private function normalizeFlashSale(Request $request, array &$data): void
+    {
+        $flashActive = $request->boolean('flash_sale_active');
+        $data['flash_sale_active'] = $flashActive;
+
+        if (! $flashActive) {
+            $data['flash_sale_discount_type'] = null;
+            $data['flash_sale_discount_value'] = null;
+            $data['flash_sale_start_at'] = null;
+            $data['flash_sale_end_at'] = null;
+            return;
+        }
+
+        $data['flash_sale_discount_type'] = $data['flash_sale_discount_type'] ?? null;
+        $data['flash_sale_discount_value'] = $data['flash_sale_discount_value'] ?? 0;
+        $data['flash_sale_start_at'] = $data['flash_sale_start_at'] ?? null;
+        $data['flash_sale_end_at'] = $data['flash_sale_end_at'] ?? null;
+
+        if (! $data['flash_sale_discount_type'] || ! $data['flash_sale_discount_value']) {
+            $data['flash_sale_active'] = false;
+            $data['flash_sale_discount_type'] = null;
+            $data['flash_sale_discount_value'] = null;
+        }
     }
 
     private function uniqueSlug(string $name, ?int $ignoreId = null): string

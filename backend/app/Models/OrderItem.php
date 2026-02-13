@@ -16,12 +16,14 @@ class OrderItem extends Model
         'unit_price',
         'qty',
         'line_total',
+        'is_flash_sale',
     ];
 
     protected $casts = [
         'unit_price' => 'integer',
         'qty' => 'integer',
         'line_total' => 'integer',
+        'is_flash_sale' => 'boolean',
     ];
 
     public function order()

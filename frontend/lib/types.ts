@@ -12,6 +12,15 @@ export type Product = {
   discount_type?: 'PERCENT' | 'FIXED' | null;
   discount_value?: number | null;
   stock?: number | null;
+  flash_sale_active?: boolean | null;
+  flash_sale_discount_type?: 'PERCENT' | 'FIXED' | null;
+  flash_sale_discount_value?: number | null;
+  flash_sale_start_at?: string | null;
+  flash_sale_end_at?: string | null;
+  flash_sale_stock?: number | null;
+  flash_sale_sold?: number | null;
+  flash_sale_remaining?: number | null;
+  max_qty_per_customer?: number | null;
   is_active: boolean;
 };
 

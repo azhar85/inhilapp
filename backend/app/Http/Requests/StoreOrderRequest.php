@@ -20,6 +20,7 @@ class StoreOrderRequest extends FormRequest
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'distinct'],
             'items.*.qty' => ['required', 'integer', 'min:1'],
+            'items.*.is_flash_sale' => ['nullable', 'boolean'],
         ];
     }
 }

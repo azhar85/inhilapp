@@ -53,6 +53,7 @@ export default function CheckoutPage() {
           items: items.map((item) => ({
             product_id: item.product_id,
             qty: item.qty,
+            is_flash_sale: item.mode === 'flash',
           })),
         }),
       });

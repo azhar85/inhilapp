@@ -8,7 +8,13 @@ import { formatRupiah } from '@/lib/formatRupiah';
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 const ADMIN_TOKEN_KEY = 'inhilapp_admin_token';
 
-type TabKey = 'products' | 'orders' | 'vouchers' | 'stocks' | 'settings';
+type TabKey =
+  | 'products'
+  | 'flashsale'
+  | 'orders'
+  | 'vouchers'
+  | 'stocks'
+  | 'settings';
 
 type ProductFormState = {
   id?: number;
@@ -22,6 +28,17 @@ type ProductFormState = {
   discount_type: '' | 'PERCENT' | 'FIXED';
   discount_value: string;
   is_active: boolean;
+};
+
+type FlashSaleFormState = {
+  product_id: string;
+  flash_sale_active: boolean;
+  flash_sale_discount_type: '' | 'PERCENT' | 'FIXED';
+  flash_sale_discount_value: string;
+  flash_sale_start_at: string;
+  flash_sale_end_at: string;
+  flash_sale_stock: string;
+  max_qty_per_customer: string;
 };
 
 type VoucherFormState = {
@@ -83,6 +100,17 @@ const defaultVoucherForm: VoucherFormState = {
   is_active: true,
 };
 
+const defaultFlashForm: FlashSaleFormState = {
+  product_id: '',
+  flash_sale_active: false,
+  flash_sale_discount_type: '',
+  flash_sale_discount_value: '',
+  flash_sale_start_at: '',
+  flash_sale_end_at: '',
+  flash_sale_stock: '',
+  max_qty_per_customer: '',
+};
+
 const defaultStockForm: StockFormState = {
   product_id: '',
   active_date: '',
@@ -119,6 +147,7 @@ export default function AdminPage() {
   const [settings, setSettings] = useState<SiteSettings | null>(null);
 
   const [productForm, setProductForm] = useState<ProductFormState>(defaultProductForm);
+  const [flashForm, setFlashForm] = useState<FlashSaleFormState>(defaultFlashForm);
   const [voucherForm, setVoucherForm] = useState<VoucherFormState>(defaultVoucherForm);
   const [stockForm, setStockForm] = useState<StockFormState>(defaultStockForm);
   const [settingsForm, setSettingsForm] = useState<SettingsFormState>(
@@ -150,6 +179,7 @@ export default function AdminPage() {
   const [showStockModal, setShowStockModal] = useState(false);
   const [isEditingStock, setIsEditingStock] = useState(false);
   const [stockDetail, setStockDetail] = useState<Stock | null>(null);
+  const [showFlashModal, setShowFlashModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const orderFilters = useMemo(() => {
@@ -166,6 +196,11 @@ export default function AdminPage() {
     const start = (orderPage - 1) * orderPageSize;
     return orders.slice(start, start + orderPageSize);
   }, [orders, orderPage]);
+
+  const flashSaleProducts = useMemo(
+    () => products.filter((product) => product.flash_sale_active),
+    [products]
+  );
 
   useEffect(() => {
     const stored = localStorage.getItem(ADMIN_TOKEN_KEY);
@@ -288,6 +323,10 @@ export default function AdminPage() {
     setClearGallery(false);
     setRemoveCover(false);
     setIsEditingProduct(false);
+  };
+
+  const resetFlashForm = () => {
+    setFlashForm(defaultFlashForm);
   };
 
   const resetVoucherForm = () => {
@@ -509,6 +548,165 @@ export default function AdminPage() {
     }
   };
 
+  const toInputDateTime = (value?: string | null) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (num: number) => String(num).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+      date.getDate()
+    )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+  const toUtcIso = (value?: string | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString();
+  };
+
+  const buildFlashFormFromProduct = (product: Product): FlashSaleFormState => ({
+    product_id: String(product.id),
+    flash_sale_active: product.flash_sale_active ?? false,
+    flash_sale_discount_type: product.flash_sale_discount_type ?? '',
+    flash_sale_discount_value:
+      product.flash_sale_discount_value !== null &&
+      product.flash_sale_discount_value !== undefined
+        ? String(product.flash_sale_discount_value)
+        : '',
+    flash_sale_start_at: toInputDateTime(product.flash_sale_start_at),
+    flash_sale_end_at: toInputDateTime(product.flash_sale_end_at),
+    flash_sale_stock:
+      product.flash_sale_stock !== null && product.flash_sale_stock !== undefined
+        ? String(product.flash_sale_stock)
+        : '',
+    max_qty_per_customer:
+      product.max_qty_per_customer !== null &&
+      product.max_qty_per_customer !== undefined
+        ? String(product.max_qty_per_customer)
+        : '',
+  });
+
+  const openFlashModal = (product?: Product) => {
+    if (product) {
+      setFlashForm(buildFlashFormFromProduct(product));
+    } else {
+      resetFlashForm();
+    }
+    setShowFlashModal(true);
+  };
+
+  const handleFlashProductChange = (productId: string) => {
+    if (!productId) {
+      resetFlashForm();
+      return;
+    }
+    const selected = products.find((item) => item.id === Number(productId));
+    if (!selected) return;
+    setFlashForm(buildFlashFormFromProduct(selected));
+  };
+
+  const handleSaveFlashSale = async () => {
+    if (actionLoading) return;
+    if (!flashForm.product_id) {
+      setError('Produk wajib dipilih.');
+      return;
+    }
+    const product = products.find(
+      (item) => item.id === Number(flashForm.product_id)
+    );
+    if (!product) {
+      setError('Produk tidak ditemukan.');
+      return;
+    }
+    if (
+      flashForm.flash_sale_active &&
+      (!flashForm.flash_sale_discount_type || !flashForm.flash_sale_discount_value)
+    ) {
+      setError('Diskon flash sale wajib diisi.');
+      return;
+    }
+
+    setActionLoading('Menyimpan flash sale...');
+    setError(null);
+    try {
+      const payload: Record<string, unknown> = {
+        name: product.name ?? '',
+        price: product.price ?? 0,
+        flash_sale_active: flashForm.flash_sale_active,
+        flash_sale_discount_type: flashForm.flash_sale_discount_type || null,
+        flash_sale_discount_value: flashForm.flash_sale_discount_value
+          ? Number(flashForm.flash_sale_discount_value)
+          : null,
+        flash_sale_start_at: toUtcIso(flashForm.flash_sale_start_at),
+        flash_sale_end_at: toUtcIso(flashForm.flash_sale_end_at),
+        flash_sale_stock: flashForm.flash_sale_stock
+          ? Number(flashForm.flash_sale_stock)
+          : null,
+        max_qty_per_customer: flashForm.max_qty_per_customer
+          ? Number(flashForm.max_qty_per_customer)
+          : null,
+      };
+
+      const response = await adminFetch(
+        `${API_BASE}/api/admin/products/${product.id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!response.ok) {
+        setError('Gagal menyimpan flash sale.');
+        return;
+      }
+
+      const refreshed = await adminFetch(`${API_BASE}/api/admin/products`);
+      setProducts(await refreshed.json());
+      setSuccessMessage('Flash sale tersimpan.');
+      resetFlashForm();
+      setShowFlashModal(false);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDisableFlashSale = async (product: Product) => {
+    if (actionLoading) return;
+    setActionLoading('Menonaktifkan flash sale...');
+    setError(null);
+    try {
+      const payload = {
+        name: product.name ?? '',
+        price: product.price ?? 0,
+        flash_sale_active: false,
+        flash_sale_discount_type: null,
+        flash_sale_discount_value: null,
+        flash_sale_start_at: null,
+        flash_sale_end_at: null,
+        flash_sale_stock: null,
+        max_qty_per_customer: null,
+      };
+      const response = await adminFetch(
+        `${API_BASE}/api/admin/products/${product.id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
+      if (!response.ok) {
+        setError('Gagal menonaktifkan flash sale.');
+        return;
+      }
+      const refreshed = await adminFetch(`${API_BASE}/api/admin/products`);
+      setProducts(await refreshed.json());
+      setSuccessMessage('Flash sale dinonaktifkan.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleUpdateOrder = async (order: Order) => {
     if (actionLoading) return;
     setActionLoading('Menyimpan order...');
@@ -603,21 +801,34 @@ export default function AdminPage() {
     setShowVoucherModal(true);
   };
 
-  const handleDeleteVoucher = async (voucherId: number) => {
+  const handleDeactivateVoucher = async (voucherId: number) => {
     if (actionLoading) return;
-    setActionLoading('Menghapus voucher...');
+    const target = vouchers.find((item) => item.id === voucherId);
+    if (!target) return;
+    if (!window.confirm('Nonaktifkan voucher ini?')) return;
+    setActionLoading('Menonaktifkan voucher...');
     setError(null);
     try {
-      const deletePayload = new FormData();
-      deletePayload.append('_method', 'DELETE');
+      const payload = {
+        code: target.code,
+        type: target.type,
+        value: target.value,
+        max_discount: target.max_discount ?? null,
+        min_order: target.min_order ?? null,
+        usage_limit: target.usage_limit ?? null,
+        starts_at: target.starts_at ?? null,
+        ends_at: target.ends_at ?? null,
+        is_active: false,
+      };
 
       const response = await adminFetch(`${API_BASE}/api/admin/vouchers/${voucherId}`, {
-        method: 'POST',
-        body: deletePayload,
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        setError('Gagal menghapus voucher.');
+        setError('Gagal menonaktifkan voucher.');
         return;
       }
 
@@ -625,7 +836,7 @@ export default function AdminPage() {
       setVouchers(await refreshed.json());
       resetVoucherForm();
       setShowVoucherModal(false);
-      setSuccessMessage('Voucher dihapus.');
+      setSuccessMessage('Voucher dinonaktifkan.');
     } finally {
       setActionLoading(null);
     }
@@ -900,6 +1111,27 @@ export default function AdminPage() {
       status.toLowerCase().replace(/_/g, ' ')
     );
   };
+  const flashStatus = (product: Product) => {
+    const now = new Date();
+    const start = product.flash_sale_start_at
+      ? new Date(product.flash_sale_start_at)
+      : null;
+    const end = product.flash_sale_end_at
+      ? new Date(product.flash_sale_end_at)
+      : null;
+    if (start && now < start) return 'Akan datang';
+    if (end && now > end) return 'Berakhir';
+    return 'Berjalan';
+  };
+  const flashDiscountLabel = (product: Product) => {
+    if (!product.flash_sale_discount_type || !product.flash_sale_discount_value) {
+      return '-';
+    }
+    if (product.flash_sale_discount_type === 'PERCENT') {
+      return `${product.flash_sale_discount_value}%`;
+    }
+    return formatRupiah(product.flash_sale_discount_value);
+  };
   const isStockActive = (stock: Stock) => Boolean(stock.is_active);
   const stockProductLabel = useMemo(() => {
     if (!stockForm.product_id) {
@@ -913,6 +1145,10 @@ export default function AdminPage() {
       `Produk #${stockForm.product_id}`
     );
   }, [stockForm.product_id, stockForm.id, products, stocks]);
+  const flashProduct = useMemo(() => {
+    if (!flashForm.product_id) return null;
+    return products.find((item) => item.id === Number(flashForm.product_id)) ?? null;
+  }, [flashForm.product_id, products]);
   const logoPreview = useMemo(() => {
     if (logoFile) {
       return URL.createObjectURL(logoFile);
@@ -1013,7 +1249,9 @@ export default function AdminPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(['products', 'orders', 'vouchers', 'stocks', 'settings'] as TabKey[]).map(
+            {(
+              ['products', 'flashsale', 'orders', 'vouchers', 'stocks', 'settings'] as TabKey[]
+            ).map(
               (tab) => (
               <button
                 key={tab}
@@ -1026,6 +1264,7 @@ export default function AdminPage() {
                 }`}
               >
                 {tab === 'products' && 'Produk'}
+                {tab === 'flashsale' && 'Flashsale'}
                 {tab === 'orders' && 'Order'}
                 {tab === 'vouchers' && 'Voucher'}
                 {tab === 'stocks' && 'Stock'}
@@ -1115,6 +1354,88 @@ export default function AdminPage() {
                     >
                       {product.is_active ? 'Aktif' : 'Nonaktif'}
                     </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'flashsale' && (
+        <section className="mt-8 space-y-6">
+          <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-soft">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-ink">Flashsale</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Pilih produk yang sudah ada atau buat produk baru untuk
+                  flash sale.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => openFlashModal()}
+                  className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Atur Flash Sale
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetProductForm();
+                    setShowProductModal(true);
+                  }}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600"
+                >
+                  Tambah Produk Baru
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-soft">
+            <h3 className="text-base font-semibold text-ink">Produk Flash Sale</h3>
+            <div className="mt-4 space-y-3">
+              {flashSaleProducts.length === 0 && (
+                <p className="text-sm text-slate-500">
+                  Belum ada produk flash sale yang aktif.
+                </p>
+              )}
+              {flashSaleProducts.map((product) => (
+                <div
+                  key={`flash-${product.id}`}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-ink">
+                      {product.name}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Status: {flashStatus(product)} · Diskon:{' '}
+                      {flashDiscountLabel(product)}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Mulai: {formatDateTime(product.flash_sale_start_at)} · Selesai:{' '}
+                      {formatDateTime(product.flash_sale_end_at)}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openFlashModal(product)}
+                      className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDisableFlashSale(product)}
+                      className="rounded-full border border-red-200 px-4 py-2 text-xs font-semibold text-red-600"
+                    >
+                      Nonaktifkan
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1252,7 +1573,8 @@ export default function AdminPage() {
                   <div>
                     <div className="text-sm font-semibold text-ink">{voucher.code}</div>
                     <div className="text-xs text-slate-500">
-                      {voucher.type} - {voucher.value}
+                      {voucher.type} - {voucher.value} · Terpakai{' '}
+                      {voucher.used_count ?? 0}
                     </div>
                   </div>
                   <span
@@ -2076,11 +2398,11 @@ export default function AdminPage() {
                 {voucherForm.id && (
                   <button
                     type="button"
-                    onClick={() => handleDeleteVoucher(voucherForm.id!)}
+                    onClick={() => handleDeactivateVoucher(voucherForm.id!)}
                     disabled={isBusy}
                     className="rounded-full border border-red-200 px-5 py-2 text-sm font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    {isBusy ? 'Menghapus...' : 'Hapus'}
+                    {isBusy ? 'Menonaktifkan...' : 'Nonaktifkan'}
                   </button>
                 )}
                 </div>
@@ -2394,6 +2716,200 @@ export default function AdminPage() {
                 >
                   Tutup
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFlashModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
+          <button
+            type="button"
+            onClick={() => {
+              resetFlashForm();
+              setShowFlashModal(false);
+            }}
+            className="absolute inset-0 h-full w-full"
+            aria-label="Tutup"
+          />
+          <div className="relative z-10 w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="grid max-h-[90vh] gap-6 overflow-y-auto p-6 lg:grid-cols-[1fr_1fr]">
+              <div className="space-y-4">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-400">
+                    Flashsale
+                  </div>
+                  <div className="mt-2 text-xl font-semibold text-ink">
+                    Atur Flash Sale
+                  </div>
+                </div>
+
+                <select
+                  value={flashForm.product_id}
+                  onChange={(event) => handleFlashProductChange(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                >
+                  <option value="">Pilih produk</option>
+                  {products.map((product) => (
+                    <option key={`flash-select-${product.id}`} value={product.id}>
+                      {product.name}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                  <div className="text-xs uppercase tracking-wide text-slate-400">
+                    Info Produk
+                  </div>
+                  <div className="mt-2 font-semibold text-ink">
+                    {flashProduct?.name ?? 'Belum dipilih'}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Harga normal:{' '}
+                    {flashProduct ? formatRupiah(flashProduct.price) : '-'}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Stok:{' '}
+                    {flashProduct?.stock === null ||
+                    flashProduct?.stock === undefined
+                      ? 'unlimited'
+                      : flashProduct.stock}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-sm">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-400">
+                      Status Flashsale
+                    </div>
+                    <div className="mt-1 font-semibold text-ink">
+                      {flashForm.flash_sale_active ? 'Aktif' : 'Nonaktif'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFlashForm((prev) => ({
+                        ...prev,
+                        flash_sale_active: !prev.flash_sale_active,
+                      }))
+                    }
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                      flashForm.flash_sale_active ? 'bg-emerald-200' : 'bg-slate-200'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${
+                        flashForm.flash_sale_active ? 'translate-x-5' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <select
+                    value={flashForm.flash_sale_discount_type}
+                    onChange={(event) =>
+                      setFlashForm((prev) => ({
+                        ...prev,
+                        flash_sale_discount_type: event.target.value as
+                          | 'PERCENT'
+                          | 'FIXED'
+                          | '',
+                      }))
+                    }
+                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                  >
+                    <option value="">Tipe diskon</option>
+                    <option value="PERCENT">Diskon %</option>
+                    <option value="FIXED">Diskon Rp</option>
+                  </select>
+                  <input
+                    value={flashForm.flash_sale_discount_value}
+                    onChange={(event) =>
+                      setFlashForm((prev) => ({
+                        ...prev,
+                        flash_sale_discount_value: event.target.value,
+                      }))
+                    }
+                    placeholder="Nilai diskon"
+                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <input
+                    type="datetime-local"
+                    value={flashForm.flash_sale_start_at}
+                    onChange={(event) =>
+                      setFlashForm((prev) => ({
+                        ...prev,
+                        flash_sale_start_at: event.target.value,
+                      }))
+                    }
+                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                  />
+                  <input
+                    type="datetime-local"
+                    value={flashForm.flash_sale_end_at}
+                    onChange={(event) =>
+                      setFlashForm((prev) => ({
+                        ...prev,
+                        flash_sale_end_at: event.target.value,
+                      }))
+                    }
+                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <input
+                    value={flashForm.flash_sale_stock}
+                    onChange={(event) =>
+                      setFlashForm((prev) => ({
+                        ...prev,
+                        flash_sale_stock: event.target.value,
+                      }))
+                    }
+                    placeholder="Stok flash sale"
+                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                  />
+                  <input
+                    value={flashForm.max_qty_per_customer}
+                    onChange={(event) =>
+                      setFlashForm((prev) => ({
+                        ...prev,
+                        max_qty_per_customer: event.target.value,
+                      }))
+                    }
+                    placeholder="Maksimal per pelanggan"
+                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveFlashSale}
+                    disabled={isBusy || !flashForm.product_id}
+                    className="rounded-full bg-ink px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {isBusy ? 'Menyimpan...' : 'Simpan'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetFlashForm();
+                      setShowFlashModal(false);
+                    }}
+                    className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-600"
+                  >
+                    Tutup
+                  </button>
+                </div>
               </div>
             </div>
           </div>

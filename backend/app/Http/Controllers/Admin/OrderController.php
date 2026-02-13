@@ -88,11 +88,15 @@ class OrderController extends Controller
             if (! $product) {
                 continue;
             }
-            if ($product->stock === null) {
-                continue;
+            if ($product->stock !== null) {
+                $product->increment('stock', $item->qty);
             }
 
-            $product->increment('stock', $item->qty);
+            if ($item->is_flash_sale && $product->flash_sale_stock !== null) {
+                $nextSold = max(($product->flash_sale_sold ?? 0) - $item->qty, 0);
+                $product->flash_sale_sold = $nextSold;
+                $product->save();
+            }
         }
 
         $order->stock_restored_at = now();

@@ -17,6 +17,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
+  const [now, setNow] = useState(() => new Date());
 
   const categories = useMemo(() => {
     const items = products
@@ -101,11 +102,94 @@ export default function HomePage() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const storeName = settings?.store_name?.trim() ? settings.store_name : 'InhilApp';
   const storeTagline = settings?.store_tagline ?? 'Premium App';
   const logoUrl = settings?.logo_url || '/logo.png';
 
   const showCartBar = count > 0;
+
+  const parseDate = (value?: string | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date;
+  };
+
+  const upcomingFlashes = useMemo(() => {
+    return products
+      .map((product) => ({
+        product,
+        start: parseDate(product.flash_sale_start_at),
+      }))
+      .filter(
+        (item) =>
+          item.product.flash_sale_active &&
+          item.start &&
+          item.start.getTime() > now.getTime()
+      )
+      .sort((a, b) => a.start!.getTime() - b.start!.getTime());
+  }, [products, now]);
+
+  const activeFlashes = useMemo(() => {
+    return products
+      .map((product) => ({
+        product,
+        start: parseDate(product.flash_sale_start_at),
+        end: parseDate(product.flash_sale_end_at),
+      }))
+      .filter((item) => {
+        if (!item.product.flash_sale_active || !item.end) return false;
+        if (item.start && now.getTime() < item.start.getTime()) return false;
+        return now.getTime() <= item.end.getTime();
+      })
+      .sort((a, b) => a.end!.getTime() - b.end!.getTime());
+  }, [products, now]);
+
+  const formatCountdown = (target?: Date | null) => {
+    if (!target) return '';
+    const diff = target.getTime() - now.getTime();
+    if (diff <= 0) return '00:00:00';
+    const totalSeconds = Math.floor(diff / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = (value: number) => String(value).padStart(2, '0');
+    if (days > 0) {
+      return `${days}d ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    }
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  };
+
+  const getFlashPrice = (product: Product) => {
+    const original = product.price;
+    const type = product.flash_sale_discount_type ?? null;
+    const value = product.flash_sale_discount_value ?? 0;
+    if (!type || value <= 0) return original;
+    let discount = 0;
+    if (type === 'PERCENT') {
+      discount = Math.round(original * (value / 100));
+    } else if (type === 'FIXED') {
+      discount = value;
+    }
+    if (discount < 0) discount = 0;
+    if (discount > original) discount = original;
+    return original - discount;
+  };
+
+  const getFlashState = (product: Product) => {
+    if (!product.flash_sale_active) return 'inactive';
+    const start = parseDate(product.flash_sale_start_at);
+    const end = parseDate(product.flash_sale_end_at);
+    if (start && now < start) return 'waiting';
+    if (end && now > end) return 'ended';
+    return 'active';
+  };
 
   return (
     <main
@@ -145,6 +229,95 @@ export default function HomePage() {
           </div>
         </div>
       </nav>
+
+      {(upcomingFlashes.length > 0 || activeFlashes.length > 0) && (
+        <section className="mt-6 space-y-4">
+          {upcomingFlashes.map((item) => (
+            <div
+              key={`upcoming-${item.product.id}`}
+              className="relative overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(125deg,rgba(236,253,245,0.95),rgba(239,246,255,0.95)_45%,rgba(255,255,255,0.98))] p-4 shadow-soft backdrop-blur sm:p-5"
+            >
+              <div className="pointer-events-none absolute -right-16 -top-16 h-36 w-36 rounded-full bg-emerald-200/40 blur-3xl" />
+              <div className="pointer-events-none absolute -left-12 -bottom-14 h-36 w-36 rounded-full bg-sky-200/40 blur-3xl" />
+              <div className="relative grid grid-cols-[minmax(0,1fr)_126px] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_170px] sm:gap-4">
+                <div className="space-y-3">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200/80 bg-white/85 px-3 py-1 text-[11px] font-semibold text-emerald-700 sm:text-xs">
+                    Akan Dimulai
+                  </div>
+                  <div className="text-base font-semibold text-ink sm:text-lg">
+                    Flash sale siap dibuka
+                  </div>
+                  <div className="text-sm text-slate-600">
+                    Harga turun otomatis saat hitung mundur selesai.
+                  </div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-semibold text-emerald-700 sm:text-sm">
+                    Mulai dalam {formatCountdown(item.start)}
+                  </div>
+                  
+                </div>
+                <div className="w-[126px] justify-self-end sm:w-[170px]">
+                  <ProductCard
+                    product={item.product}
+                    onAdd={(product) => addItem(product, 1, 'flash')}
+                    priceOverride={getFlashPrice(item.product)}
+                    originalPriceOverride={item.product.price}
+                    stockOverride={
+                      item.product.flash_sale_remaining ??
+                      item.product.flash_sale_stock ??
+                      null
+                    }
+                    disableAdd
+                    hideAdd
+                    compact
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {activeFlashes.map((item) => (
+            <div
+              key={`active-${item.product.id}`}
+              className="relative overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(125deg,rgba(255,247,237,0.97),rgba(255,251,235,0.97)_45%,rgba(255,255,255,0.98))] p-4 shadow-soft backdrop-blur sm:p-5"
+            >
+              <div className="pointer-events-none absolute -right-16 -top-16 h-36 w-36 rounded-full bg-amber-200/45 blur-3xl" />
+              <div className="pointer-events-none absolute -left-12 -bottom-14 h-36 w-36 rounded-full bg-orange-200/40 blur-3xl" />
+              <div className="relative grid grid-cols-[minmax(0,1fr)_126px] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_170px] sm:gap-4">
+                <div className="space-y-3">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-amber-200/90 bg-white/90 px-3 py-1 text-[11px] font-semibold text-amber-700 sm:text-xs">
+                    <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                    Live Sekarang
+                  </div>
+                  <div className="text-base font-semibold text-ink sm:text-lg">
+                    Flash sale sedang berlangsung
+                  </div>
+                  <div className="text-sm text-slate-600">
+                    Ambil harga termurah sebelum sesi ini berakhir.
+                  </div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-amber-300 bg-white px-4 py-2 text-xs font-semibold text-amber-700 sm:text-sm">
+                    Sisa waktu {formatCountdown(item.end)}
+                  </div>
+                  
+                </div>
+                <div className="w-[126px] justify-self-end sm:w-[170px]">
+                  <ProductCard
+                    product={item.product}
+                    onAdd={(product) => addItem(product, 1, 'flash')}
+                    priceOverride={getFlashPrice(item.product)}
+                    originalPriceOverride={item.product.price}
+                    stockOverride={
+                      item.product.flash_sale_remaining ??
+                      item.product.flash_sale_stock ??
+                      null
+                    }
+                    compact
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="mt-8 rounded-3xl border border-white/70 bg-white/70 p-6 shadow-soft backdrop-blur sm:p-8">
         <div className="flex flex-col gap-4">
@@ -205,11 +378,15 @@ export default function HomePage() {
                 </div>
                 <div className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(140px,1fr))] sm:gap-5 lg:gap-6">
                   {group.items.map((product) => (
-                    <ProductCard
-                      key={product.id}
-                      product={product}
-                      onAdd={addItem}
-                    />
+                    (() => {
+                      return (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          onAdd={addItem}
+                        />
+                      );
+                    })()
                   ))}
                 </div>
               </div>
