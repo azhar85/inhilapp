@@ -176,7 +176,7 @@ class OrderController extends Controller
         if ($status === 'PAID') {
             $lines[] = 'Pembayaranmu sudah dikonfirmasi! pesananmu akan segera diproses!';
         } elseif ($status === 'DELIVERED') {
-            $lines[] = 'Pesanan sudah selesai! berikut detail pesananmu';
+            $lines[] = 'Pesanan telah selesai! berikut detail pesananmu';
             $lines[] = '';
             $lines[] = 'ID Order: ' . ($order->order_code ?? $order->id);
             foreach ($order->items as $item) {
