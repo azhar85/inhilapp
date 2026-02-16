@@ -35,7 +35,7 @@ export default function CartPage() {
           )}
           {items.map((item) => (
             <div
-              key={item.product_id}
+              key={`${item.product_id}-${item.variant_id ?? 'base'}`}
               className="flex flex-col gap-4 rounded-2xl border border-white/60 bg-white/70 p-5 shadow-soft sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex items-center gap-4">
@@ -54,6 +54,11 @@ export default function CartPage() {
                 </div>
                 <div>
                   <div className="text-lg font-semibold text-ink">{item.name}</div>
+                  {item.variant_label && (
+                    <div className="text-xs font-semibold text-slate-500">
+                      {item.variant_label}
+                    </div>
+                  )}
                   <div className="text-xs text-slate-500">
                     {item.discountLabel ? (
                       <>
@@ -73,7 +78,9 @@ export default function CartPage() {
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => updateQty(item.product_id, item.qty - 1)}
+                  onClick={() =>
+                    updateQty(item.product_id, item.variant_id ?? null, item.qty - 1)
+                  }
                   className="h-8 w-8 rounded-full border border-slate-200 text-sm"
                 >
                   -
@@ -83,7 +90,9 @@ export default function CartPage() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => updateQty(item.product_id, item.qty + 1)}
+                  onClick={() =>
+                    updateQty(item.product_id, item.variant_id ?? null, item.qty + 1)
+                  }
                   disabled={
                     item.stock !== null &&
                     item.stock !== undefined &&
@@ -95,7 +104,7 @@ export default function CartPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => removeItem(item.product_id)}
+                  onClick={() => removeItem(item.product_id, item.variant_id ?? null)}
                   className="ml-3 text-xs font-semibold text-red-500"
                 >
                   Hapus

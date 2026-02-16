@@ -46,17 +46,18 @@ export default function CheckoutPage() {
       const response = await fetch(`${API_BASE}/api/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer_name: name.trim(),
-          customer_whatsapp: whatsapp.trim(),
-          voucher_code: voucherCode || null,
-          items: items.map((item) => ({
-            product_id: item.product_id,
-            qty: item.qty,
-            is_flash_sale: item.mode === 'flash',
-          })),
-        }),
-      });
+          body: JSON.stringify({
+            customer_name: name.trim(),
+            customer_whatsapp: whatsapp.trim(),
+            voucher_code: voucherCode || null,
+            items: items.map((item) => ({
+              product_id: item.product_id,
+              variant_id: item.variant_id ?? null,
+              qty: item.qty,
+              is_flash_sale: item.mode === 'flash',
+            })),
+          }),
+        });
 
       const data = await response.json().catch(() => ({}));
 

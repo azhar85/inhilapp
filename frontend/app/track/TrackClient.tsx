@@ -247,7 +247,7 @@ export default function TrackClient() {
           </div>
 
           <div className="rounded-2xl border border-white/60 bg-white/70 p-6 shadow-soft">
-            <div className="text-sm font-semibold text-ink">Akun / Link Premium</div>
+            <div className="text-sm font-semibold text-ink">DETAIL</div>
             {(() => {
               const hasFulfillment =
                 Boolean(order.fulfillment_account) ||

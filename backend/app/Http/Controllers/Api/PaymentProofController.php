@@ -20,6 +20,7 @@ class PaymentProofController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'proof' => ['required', 'file', 'mimes:jpg,jpeg,png', 'max:10240'],
+            'item_details' => ['nullable'],
         ]);
         if ($validator->fails()) {
             return response()->json([
@@ -43,9 +44,10 @@ class PaymentProofController extends Controller
         $file = $request->file('proof');
         $path = $file->store('payment-proofs', 'public');
         $publicUrl = $this->publicUrl($path);
+        $customerInputs = $this->parseItemDetails($request->input('item_details'));
 
         try {
-            $order = DB::transaction(function () use ($id, $publicUrl) {
+            $order = DB::transaction(function () use ($id, $publicUrl, $customerInputs) {
                 $order = Order::query()
                     ->whereKey($id)
                     ->lockForUpdate()
@@ -63,6 +65,7 @@ class PaymentProofController extends Controller
 
                 $order->load('items');
                 $this->validateAndReserveStock($order);
+                $this->applyCustomerInputs($order, $customerInputs);
 
                 $order->payment_proof_url = $publicUrl;
                 $order->payment_proof_uploaded_at = now();
@@ -172,8 +175,19 @@ class PaymentProofController extends Controller
 
         foreach ($order->items as $item) {
             $lines[] = '- ' . $item->product_name_snapshot
+                . ($item->duration_snapshot ? ' (' . $item->duration_snapshot . ')' : '')
+                . ' [' . $this->methodLabel($item->delivery_method) . ']'
                 . ' x' . $item->qty
                 . ' = Rp' . number_format($item->line_total, 0, ',', '.');
+            if ($item->customer_email) {
+                $lines[] = '  Email user: ' . $item->customer_email;
+            }
+            if ($item->customer_password) {
+                $lines[] = '  Password user: ' . $item->customer_password;
+            }
+            if ($item->customer_note) {
+                $lines[] = '  Catatan user: ' . $item->customer_note;
+            }
         }
 
         $subtotal = $order->items->sum('line_total');
@@ -203,6 +217,8 @@ class PaymentProofController extends Controller
 
         foreach ($order->items as $item) {
             $lines[] = '- ' . $item->product_name_snapshot
+                . ($item->duration_snapshot ? ' (' . $item->duration_snapshot . ')' : '')
+                . ' [' . $this->methodLabel($item->delivery_method) . ']'
                 . ' x' . $item->qty
                 . ' = Rp' . number_format($item->line_total, 0, ',', '.');
         }
@@ -216,9 +232,20 @@ class PaymentProofController extends Controller
             $lines[] = 'Voucher (' . ($order->voucher_code ?? '-') . '): -Rp' . number_format($voucherDiscount, 0, ',', '.');
         }
         $lines[] = 'Total: Rp' . number_format($order->total_amount, 0, ',', '.');
-        $lines[] = 'Status: akan segera diproses.';
+        $lines[] = 'Status: menunggu konfirmasi admin.';
+        $lines[] = 'Simpan ID order ini untuk cek status: ' . ($order->order_code ?? $order->id);
 
         return implode("\n", $lines);
+    }
+
+    private function methodLabel(?string $method): string
+    {
+        return match ($method ?: 'admin_account') {
+            'invite' => 'Invite',
+            'own_account' => 'Akun Kamu',
+            'link' => 'Link',
+            default => 'Akun Admin',
+        };
     }
 
     private function generateOrderCode(): string
@@ -239,7 +266,9 @@ class PaymentProofController extends Controller
     {
         $items = $order->items;
         $productIds = $items->pluck('product_id')->unique()->values();
+        $variantIds = $items->pluck('product_variant_id')->filter()->unique()->values();
         $products = Product::query()
+            ->with('variants')
             ->whereIn('id', $productIds)
             ->where('is_active', true)
             ->lockForUpdate()
@@ -250,6 +279,15 @@ class PaymentProofController extends Controller
             throw ValidationException::withMessages([
                 'items' => ['Ada produk yang sudah tidak aktif atau dihapus. Silakan checkout ulang.'],
             ]);
+        }
+
+        $variants = collect();
+        if ($variantIds->isNotEmpty()) {
+            $variants = \App\Models\ProductVariant::query()
+                ->whereIn('id', $variantIds)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
         }
 
         $existingFlashQtyMap = OrderItem::query()
@@ -268,8 +306,18 @@ class PaymentProofController extends Controller
         foreach ($items as $item) {
             $product = $products->get($item->product_id);
             $qty = (int) $item->qty;
+            $variant = null;
+            if ($item->product_variant_id) {
+                $variant = $variants->get($item->product_variant_id);
+                if (! $variant || ! $variant->is_active) {
+                    throw ValidationException::withMessages([
+                        'items' => ["Varian {$product->name} sudah tidak tersedia. Silakan checkout ulang."],
+                    ]);
+                }
+            }
 
-            if ($product->stock !== null && $qty > (int) $product->stock) {
+            $baseStock = $variant ? $variant->stock : $product->stock;
+            if ($baseStock !== null && $qty > (int) $baseStock) {
                 throw ValidationException::withMessages([
                     'items' => ["Stok {$product->name} tidak mencukupi. Silakan checkout ulang."],
                 ]);
@@ -311,7 +359,12 @@ class PaymentProofController extends Controller
             }
 
             $qty = (int) $item->qty;
-            if ($product->stock !== null) {
+            if ($item->product_variant_id) {
+                $variant = $variants->get($item->product_variant_id);
+                if ($variant && $variant->stock !== null) {
+                    $variant->decrement('stock', $qty);
+                }
+            } elseif ($product->stock !== null) {
                 $product->decrement('stock', $qty);
             }
 
@@ -361,6 +414,66 @@ class PaymentProofController extends Controller
         }
 
         return Storage::disk('public')->url($path);
+    }
+
+    private function parseItemDetails($raw): array
+    {
+        if (! $raw) {
+            return [];
+        }
+
+        $decoded = is_string($raw) ? json_decode($raw, true) : $raw;
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($decoded as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+            $orderItemId = $entry['order_item_id'] ?? $entry['id'] ?? null;
+            if (! $orderItemId) {
+                continue;
+            }
+            $map[(int) $orderItemId] = [
+                'email' => isset($entry['email']) ? trim((string) $entry['email']) : null,
+                'password' => isset($entry['password']) ? trim((string) $entry['password']) : null,
+                'note' => isset($entry['note']) ? trim((string) $entry['note']) : null,
+            ];
+        }
+
+        return $map;
+    }
+
+    private function applyCustomerInputs(Order $order, array $inputs): void
+    {
+        foreach ($order->items as $item) {
+            $method = $item->delivery_method ?? 'admin_account';
+            $detail = $inputs[$item->id] ?? [];
+            $email = $detail['email'] ?? null;
+            $password = $detail['password'] ?? null;
+            $note = $detail['note'] ?? null;
+
+            if ($method === 'invite' && ! $email) {
+                throw ValidationException::withMessages([
+                    'items' => ['Email wajib diisi untuk metode invite.'],
+                ]);
+            }
+
+            if ($method === 'own_account') {
+                if (! $email || ! $password) {
+                    throw ValidationException::withMessages([
+                        'items' => ['Email dan password wajib diisi untuk metode akun kamu.'],
+                    ]);
+                }
+            }
+
+            $item->customer_email = $email ?: null;
+            $item->customer_password = $password ?: null;
+            $item->customer_note = $note ?: null;
+            $item->save();
+        }
     }
 
 }

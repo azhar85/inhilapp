@@ -5,15 +5,18 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ProductController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Product::query();
+        $query = Product::query()->with('variants');
 
         if ($request->filled('q')) {
             $term = $request->string('q')->toString();
@@ -55,7 +58,19 @@ class ProductController extends Controller
         }
 
         $data['is_active'] = $data['is_active'] ?? true;
-        $this->normalizeFlashSale($request, $data);
+        $flashFields = [
+            'flash_sale_active',
+            'flash_sale_discount_type',
+            'flash_sale_discount_value',
+            'flash_sale_start_at',
+            'flash_sale_end_at',
+            'flash_sale_stock',
+            'flash_sale_variant_id',
+            'max_qty_per_customer',
+        ];
+        if ($request->hasAny($flashFields)) {
+            $this->normalizeFlashSale($request, $data);
+        }
 
         if ($request->hasFile('image')) {
             $data['image_url'] = $this->storeImage($request->file('image'));
@@ -66,13 +81,28 @@ class ProductController extends Controller
         }
 
         $product = Product::create($data);
+        $variants = $this->parseVariants($request);
+        if ($variants !== null) {
+            $this->syncVariants($product, $variants);
+        }
 
+        $product->load('variants');
         return response()->json($this->normalizeProduct($product), 201);
     }
 
     public function update(Request $request, Product $product)
     {
         $data = $this->validatePayload($request, $product->id);
+        $flashFields = [
+            'flash_sale_active',
+            'flash_sale_discount_type',
+            'flash_sale_discount_value',
+            'flash_sale_start_at',
+            'flash_sale_end_at',
+            'flash_sale_stock',
+            'flash_sale_variant_id',
+            'max_qty_per_customer',
+        ];
 
         if (isset($data['slug']) && ! $data['slug']) {
             $data['slug'] = $this->uniqueSlug($data['name'] ?? $product->name, $product->id);
@@ -83,7 +113,13 @@ class ProductController extends Controller
             $data['discount_value'] = 0;
         }
 
-        $this->normalizeFlashSale($request, $data);
+        if ($request->hasAny($flashFields)) {
+            $this->normalizeFlashSale($request, $data);
+        } else {
+            foreach ($flashFields as $field) {
+                unset($data[$field]);
+            }
+        }
 
         if ($request->boolean('remove_image')) {
             $data['image_url'] = null;
@@ -110,7 +146,12 @@ class ProductController extends Controller
 
         $product->fill($data);
         $product->save();
+        $variants = $this->parseVariants($request);
+        if ($variants !== null) {
+            $this->syncVariants($product, $variants);
+        }
 
+        $product->load('variants');
         return response()->json($this->normalizeProduct($product));
     }
 
@@ -151,10 +192,21 @@ class ProductController extends Controller
         if ($request->has('max_qty_per_customer') && $request->input('max_qty_per_customer') === '') {
             $request->merge(['max_qty_per_customer' => null]);
         }
+        if ($request->has('flash_sale_variant_id') && $request->input('flash_sale_variant_id') === '') {
+            $request->merge(['flash_sale_variant_id' => null]);
+        }
 
         $uniqueRule = 'unique:products,slug';
         if ($ignoreId) {
             $uniqueRule .= ',' . $ignoreId;
+        }
+
+        $flashVariantRule = ['nullable', 'integer'];
+        if ($ignoreId) {
+            $flashVariantRule[] = Rule::exists('product_variants', 'id')
+                ->where('product_id', $ignoreId);
+        } else {
+            $flashVariantRule[] = 'exists:product_variants,id';
         }
 
         return $request->validate([
@@ -167,6 +219,7 @@ class ProductController extends Controller
             'image' => ['nullable', 'image', 'max:5120'],
             'duration' => ['nullable', 'string', 'max:255'],
             'warranty' => ['nullable', 'string', 'max:255'],
+            'method' => ['nullable', 'string', 'max:50'],
             'product_images' => ['nullable', 'array'],
             'product_images.*' => ['string', 'max:2048'],
             'gallery' => ['nullable', 'array'],
@@ -179,8 +232,10 @@ class ProductController extends Controller
             'flash_sale_discount_value' => ['nullable', 'integer', 'min:0'],
             'flash_sale_start_at' => ['nullable', 'date'],
             'flash_sale_end_at' => ['nullable', 'date'],
+            'flash_sale_variant_id' => $flashVariantRule,
             'flash_sale_stock' => ['nullable', 'integer', 'min:0'],
             'max_qty_per_customer' => ['nullable', 'integer', 'min:1'],
+            'is_popular' => ['nullable', 'boolean'],
             'is_active' => ['nullable', 'boolean'],
         ]);
     }
@@ -191,10 +246,6 @@ class ProductController extends Controller
         $data['flash_sale_active'] = $flashActive;
 
         if (! $flashActive) {
-            $data['flash_sale_discount_type'] = null;
-            $data['flash_sale_discount_value'] = null;
-            $data['flash_sale_start_at'] = null;
-            $data['flash_sale_end_at'] = null;
             return;
         }
 
@@ -202,11 +253,13 @@ class ProductController extends Controller
         $data['flash_sale_discount_value'] = $data['flash_sale_discount_value'] ?? 0;
         $data['flash_sale_start_at'] = $data['flash_sale_start_at'] ?? null;
         $data['flash_sale_end_at'] = $data['flash_sale_end_at'] ?? null;
+        $data['flash_sale_variant_id'] = $data['flash_sale_variant_id'] ?? null;
 
         if (! $data['flash_sale_discount_type'] || ! $data['flash_sale_discount_value']) {
             $data['flash_sale_active'] = false;
             $data['flash_sale_discount_type'] = null;
             $data['flash_sale_discount_value'] = null;
+            $data['flash_sale_variant_id'] = null;
         }
     }
 
@@ -262,6 +315,20 @@ class ProductController extends Controller
             $images
         )));
 
+        if ($product->relationLoaded('variants')) {
+            $product->variants = $product->variants->map(function (ProductVariant $variant) {
+                return [
+                    'id' => $variant->id,
+                    'label' => $variant->label,
+                    'price' => $variant->price,
+                    'method' => $variant->method,
+                    'warranty' => $variant->warranty,
+                    'stock' => $variant->stock,
+                    'is_active' => (bool) $variant->is_active,
+                ];
+            })->values();
+        }
+
         return $product;
     }
 
@@ -308,6 +375,74 @@ class ProductController extends Controller
         }
 
         return Storage::disk('public')->url($path);
+    }
+
+    private function parseVariants(Request $request): ?array
+    {
+        if (! $request->has('variants')) {
+            return null;
+        }
+
+        $raw = $request->input('variants');
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+
+        $decoded = is_string($raw) ? json_decode($raw, true) : $raw;
+        if (! is_array($decoded)) {
+            throw ValidationException::withMessages([
+                'variants' => ['Format varian produk tidak valid.'],
+            ]);
+        }
+
+        $variants = [];
+        foreach ($decoded as $index => $variant) {
+            if (! is_array($variant)) {
+                continue;
+            }
+            $label = trim((string) ($variant['label'] ?? ''));
+            $price = (int) ($variant['price'] ?? 0);
+            $method = trim((string) ($variant['method'] ?? ''));
+            $warranty = trim((string) ($variant['warranty'] ?? ''));
+            $stockRaw = $variant['stock'] ?? null;
+            $stock = $stockRaw === '' || $stockRaw === null ? null : (int) $stockRaw;
+
+            if ($label === '') {
+                throw ValidationException::withMessages([
+                    'variants' => ["Varian #".($index + 1)." harus punya durasi/label."],
+                ]);
+            }
+
+            if ($price < 0) {
+                throw ValidationException::withMessages([
+                    'variants' => ["Harga varian #".($index + 1)." tidak valid."],
+                ]);
+            }
+
+            $variants[] = [
+                'label' => $label,
+                'price' => $price,
+                'method' => $method !== '' ? $method : null,
+                'warranty' => $warranty !== '' ? $warranty : null,
+                'stock' => $stock,
+                'is_active' => isset($variant['is_active']) ? (bool) $variant['is_active'] : true,
+            ];
+        }
+
+        return $variants;
+    }
+
+    private function syncVariants(Product $product, array $variants): void
+    {
+        $product->variants()->delete();
+
+        if (empty($variants)) {
+            return;
+        }
+
+        foreach ($variants as $variant) {
+            $product->variants()->create($variant);
+        }
     }
 
 }

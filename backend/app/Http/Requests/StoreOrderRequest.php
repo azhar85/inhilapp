@@ -18,7 +18,8 @@ class StoreOrderRequest extends FormRequest
             'customer_whatsapp' => ['required', 'string', 'max:32'],
             'voucher_code' => ['nullable', 'string', 'max:50'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['required', 'integer', 'distinct'],
+            'items.*.product_id' => ['required', 'integer'],
+            'items.*.variant_id' => ['nullable', 'integer'],
             'items.*.qty' => ['required', 'integer', 'min:1'],
             'items.*.is_flash_sale' => ['nullable', 'boolean'],
         ];

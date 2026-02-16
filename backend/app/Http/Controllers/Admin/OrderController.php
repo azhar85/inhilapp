@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
@@ -58,6 +59,10 @@ class OrderController extends Controller
             'fulfillment_notes' => ['nullable', 'string'],
         ]);
 
+        $order->loadMissing('items');
+        $methods = $this->orderMethods($order);
+        $this->validateFulfillmentForStatus($data, $methods);
+
         $previousStatus = $order->status;
         $order->fill($data);
         $order->save();
@@ -68,6 +73,35 @@ class OrderController extends Controller
         }
 
         return response()->json($order);
+    }
+
+    private function validateFulfillmentForStatus(array $data, array $methods): void
+    {
+        if (($data['status'] ?? null) !== 'DELIVERED') {
+            return;
+        }
+
+        $errors = [];
+        $email = trim((string) ($data['fulfillment_email'] ?? ''));
+        $password = trim((string) ($data['fulfillment_password'] ?? ''));
+        $link = trim((string) ($data['fulfillment_link'] ?? ''));
+
+        if (in_array('admin_account', $methods, true)) {
+            if ($email === '') {
+                $errors['fulfillment_email'][] = 'Email wajib diisi untuk metode akun admin.';
+            }
+            if ($password === '') {
+                $errors['fulfillment_password'][] = 'Password wajib diisi untuk metode akun admin.';
+            }
+        }
+
+        if (in_array('link', $methods, true) && $link === '') {
+            $errors['fulfillment_link'][] = 'Link wajib diisi untuk metode link.';
+        }
+
+        if (!empty($errors)) {
+            throw ValidationException::withMessages($errors);
+        }
     }
 
     private function restoreStockIfNeeded(Order $order, string $status, string $previousStatus): void
@@ -138,6 +172,7 @@ class OrderController extends Controller
 
     private function buildCustomerStatusMessage(Order $order, string $status): string
     {
+        $methods = $this->orderMethods($order);
         $lines = [];
         $lines[] = 'Update status pesanan InhilApp.';
         $lines[] = '';
@@ -153,10 +188,13 @@ class OrderController extends Controller
         } elseif ($status === 'DELIVERED') {
             $lines[] = '';
             $lines[] = 'Pesanan sudah selesai. Berikut detail akun/link premium:';
-            $lines[] = 'Akun: ' . $this->valueOrDash($order->fulfillment_account);
-            $lines[] = 'Email: ' . $this->valueOrDash($order->fulfillment_email);
-            $lines[] = 'Password: ' . $this->valueOrDash($order->fulfillment_password);
-            $lines[] = 'Link: ' . $this->valueOrDash($order->fulfillment_link);
+            if (in_array('admin_account', $methods, true)) {
+                $lines[] = 'Email: ' . $this->valueOrDash($order->fulfillment_email);
+                $lines[] = 'Password: ' . $this->valueOrDash($order->fulfillment_password);
+            }
+            if (in_array('link', $methods, true)) {
+                $lines[] = 'Link: ' . $this->valueOrDash($order->fulfillment_link);
+            }
             if ($order->fulfillment_notes) {
                 $lines[] = 'Catatan: ' . $order->fulfillment_notes;
             }
@@ -179,6 +217,8 @@ class OrderController extends Controller
         $lines[] = 'Detail pesanan:';
         foreach ($order->items as $item) {
             $lines[] = '- ' . $item->product_name_snapshot
+                . ($item->duration_snapshot ? ' (' . $item->duration_snapshot . ')' : '')
+                . ' (' . $this->methodLabel($item->delivery_method) . ')'
                 . ' x' . $item->qty
                 . ' = Rp' . number_format($item->line_total, 0, ',', '.');
         }
@@ -202,5 +242,25 @@ class OrderController extends Controller
     private function valueOrDash(?string $value): string
     {
         return $value && trim($value) !== '' ? $value : '-';
+    }
+
+    private function orderMethods(Order $order): array
+    {
+        return $order->items
+            ->pluck('delivery_method')
+            ->map(fn ($method) => $method ?: 'admin_account')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function methodLabel(?string $method): string
+    {
+        return match ($method ?: 'admin_account') {
+            'invite' => 'Invite',
+            'own_account' => 'Akun Kamu',
+            'link' => 'Link',
+            default => 'Akun Admin',
+        };
     }
 }

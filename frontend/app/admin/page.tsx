@@ -8,6 +8,24 @@ import { formatRupiah } from '@/lib/formatRupiah';
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 const ADMIN_TOKEN_KEY = 'inhilapp_admin_token';
 
+const METHOD_OPTIONS = [
+  { value: '', label: 'Pilih metode' },
+  { value: 'invite', label: 'Invite' },
+  { value: 'admin_account', label: 'Akun Admin' },
+  { value: 'own_account', label: 'Akun Kamu' },
+  { value: 'link', label: 'Link' },
+];
+
+const METHOD_LABELS: Record<string, string> = {
+  invite: 'Invite',
+  admin_account: 'Akun Admin',
+  own_account: 'Akun Kamu',
+  link: 'Link',
+};
+
+const getMethodLabel = (method?: string | null) =>
+  METHOD_LABELS[method ?? 'admin_account'] ?? method ?? 'Akun Admin';
+
 type TabKey =
   | 'products'
   | 'flashsale'
@@ -25,13 +43,27 @@ type ProductFormState = {
   description: string;
   duration: string;
   warranty: string;
+  method: string;
+  variants: ProductVariantForm[];
   discount_type: '' | 'PERCENT' | 'FIXED';
   discount_value: string;
+  is_popular: boolean;
+  is_active: boolean;
+};
+
+type ProductVariantForm = {
+  id?: number;
+  label: string;
+  price: string;
+  method: string;
+  warranty: string;
+  stock: string;
   is_active: boolean;
 };
 
 type FlashSaleFormState = {
   product_id: string;
+  flash_sale_variant_id: string;
   flash_sale_active: boolean;
   flash_sale_discount_type: '' | 'PERCENT' | 'FIXED';
   flash_sale_discount_value: string;
@@ -83,8 +115,20 @@ const defaultProductForm: ProductFormState = {
   description: '',
   duration: '',
   warranty: '',
+  method: '',
+  variants: [],
   discount_type: '',
   discount_value: '',
+  is_popular: false,
+  is_active: true,
+};
+
+const defaultVariantForm: ProductVariantForm = {
+  label: '',
+  price: '',
+  method: '',
+  warranty: '',
+  stock: '',
   is_active: true,
 };
 
@@ -102,6 +146,7 @@ const defaultVoucherForm: VoucherFormState = {
 
 const defaultFlashForm: FlashSaleFormState = {
   product_id: '',
+  flash_sale_variant_id: '',
   flash_sale_active: false,
   flash_sale_discount_type: '',
   flash_sale_discount_value: '',
@@ -180,6 +225,7 @@ export default function AdminPage() {
   const [isEditingStock, setIsEditingStock] = useState(false);
   const [stockDetail, setStockDetail] = useState<Stock | null>(null);
   const [showFlashModal, setShowFlashModal] = useState(false);
+  const [flashDetail, setFlashDetail] = useState<Product | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const orderFilters = useMemo(() => {
@@ -196,9 +242,35 @@ export default function AdminPage() {
     const start = (orderPage - 1) * orderPageSize;
     return orders.slice(start, start + orderPageSize);
   }, [orders, orderPage]);
+  const orderModalMethods = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (orderModal?.items ?? []).map(
+            (item) => item.delivery_method ?? 'admin_account'
+          )
+        )
+      ),
+    [orderModal]
+  );
+  const requiresFulfillmentEmail = orderModalMethods.includes('admin_account');
+  const requiresFulfillmentPassword = orderModalMethods.includes('admin_account');
+  const requiresFulfillmentLink = orderModalMethods.includes('link');
 
   const flashSaleProducts = useMemo(
-    () => products.filter((product) => product.flash_sale_active),
+    () =>
+      products.filter((product) => {
+        if (product.flash_sale_active) return true;
+        return Boolean(
+          product.flash_sale_discount_type ||
+            product.flash_sale_discount_value ||
+            product.flash_sale_start_at ||
+            product.flash_sale_end_at ||
+            product.flash_sale_stock ||
+            product.flash_sale_variant_id ||
+            product.max_qty_per_customer
+        );
+      }),
     [products]
   );
 
@@ -325,6 +397,36 @@ export default function AdminPage() {
     setIsEditingProduct(false);
   };
 
+  const handleAddVariant = () => {
+    setProductForm((prev) => ({
+      ...prev,
+      variants: [...(prev.variants ?? []), { ...defaultVariantForm }],
+    }));
+  };
+
+  const handleUpdateVariant = (
+    index: number,
+    field: keyof ProductVariantForm,
+    value: string | boolean
+  ) => {
+    setProductForm((prev) => {
+      const next = [...(prev.variants ?? [])];
+      next[index] = {
+        ...next[index],
+        [field]: value,
+      } as ProductVariantForm;
+      return { ...prev, variants: next };
+    });
+  };
+
+  const handleRemoveVariant = (index: number) => {
+    setProductForm((prev) => {
+      const next = [...(prev.variants ?? [])];
+      next.splice(index, 1);
+      return { ...prev, variants: next };
+    });
+  };
+
   const resetFlashForm = () => {
     setFlashForm(defaultFlashForm);
   };
@@ -364,10 +466,26 @@ export default function AdminPage() {
         formData.append('duration', productForm.duration.trim());
       if (productForm.warranty.trim())
         formData.append('warranty', productForm.warranty.trim());
+      if (productForm.method.trim())
+        formData.append('method', productForm.method.trim());
       if (productForm.discount_type) formData.append('discount_type', productForm.discount_type);
       if (productForm.discount_value)
         formData.append('discount_value', productForm.discount_value);
+      formData.append('is_popular', productForm.is_popular ? '1' : '0');
       formData.append('is_active', productForm.is_active ? '1' : '0');
+
+      if (productForm.variants) {
+        const payload = productForm.variants.map((variant) => ({
+          id: variant.id,
+          label: variant.label.trim(),
+          price: Number(variant.price || 0),
+          method: variant.method.trim(),
+          warranty: variant.warranty.trim(),
+          stock: variant.stock.trim(),
+          is_active: variant.is_active,
+        }));
+        formData.append('variants', JSON.stringify(payload));
+      }
 
       if (!coverFile && existingCover && !removeCover) {
         formData.append('image_url', existingCover);
@@ -433,8 +551,23 @@ export default function AdminPage() {
       description: product.description ?? '',
       duration: product.duration ?? '',
       warranty: product.warranty ?? '',
+      method: product.method ?? '',
+      variants:
+        product.variants?.map((variant) => ({
+          id: variant.id,
+          label: variant.label ?? '',
+          price: String(variant.price ?? ''),
+          method: variant.method ?? '',
+          warranty: variant.warranty ?? '',
+          stock:
+            variant.stock === null || variant.stock === undefined
+              ? ''
+              : String(variant.stock),
+          is_active: variant.is_active ?? true,
+        })) ?? [],
       discount_type: product.discount_type ?? '',
       discount_value: product.discount_value ? String(product.discount_value) : '',
+      is_popular: product.is_popular ?? false,
       is_active: product.is_active ?? true,
     });
     if (product.image_url) {
@@ -566,6 +699,9 @@ export default function AdminPage() {
 
   const buildFlashFormFromProduct = (product: Product): FlashSaleFormState => ({
     product_id: String(product.id),
+    flash_sale_variant_id: product.flash_sale_variant_id
+      ? String(product.flash_sale_variant_id)
+      : 'base',
     flash_sale_active: product.flash_sale_active ?? false,
     flash_sale_discount_type: product.flash_sale_discount_type ?? '',
     flash_sale_discount_value:
@@ -618,10 +754,7 @@ export default function AdminPage() {
       setError('Produk tidak ditemukan.');
       return;
     }
-    if (
-      flashForm.flash_sale_active &&
-      (!flashForm.flash_sale_discount_type || !flashForm.flash_sale_discount_value)
-    ) {
+    if (!flashForm.flash_sale_discount_type || !flashForm.flash_sale_discount_value) {
       setError('Diskon flash sale wajib diisi.');
       return;
     }
@@ -629,10 +762,14 @@ export default function AdminPage() {
     setActionLoading('Menyimpan flash sale...');
     setError(null);
     try {
+      const flashVariantId =
+        flashForm.flash_sale_variant_id && flashForm.flash_sale_variant_id !== 'base'
+          ? Number(flashForm.flash_sale_variant_id)
+          : null;
       const payload: Record<string, unknown> = {
         name: product.name ?? '',
         price: product.price ?? 0,
-        flash_sale_active: flashForm.flash_sale_active,
+        flash_sale_active: true,
         flash_sale_discount_type: flashForm.flash_sale_discount_type || null,
         flash_sale_discount_value: flashForm.flash_sale_discount_value
           ? Number(flashForm.flash_sale_discount_value)
@@ -645,6 +782,7 @@ export default function AdminPage() {
         max_qty_per_customer: flashForm.max_qty_per_customer
           ? Number(flashForm.max_qty_per_customer)
           : null,
+        flash_sale_variant_id: flashVariantId,
       };
 
       const response = await adminFetch(
@@ -680,12 +818,6 @@ export default function AdminPage() {
         name: product.name ?? '',
         price: product.price ?? 0,
         flash_sale_active: false,
-        flash_sale_discount_type: null,
-        flash_sale_discount_value: null,
-        flash_sale_start_at: null,
-        flash_sale_end_at: null,
-        flash_sale_stock: null,
-        max_qty_per_customer: null,
       };
       const response = await adminFetch(
         `${API_BASE}/api/admin/products/${product.id}`,
@@ -707,26 +839,118 @@ export default function AdminPage() {
     }
   };
 
+  const handleToggleFlashSale = async (product: Product, nextActive: boolean) => {
+    if (actionLoading) return;
+    setActionLoading(nextActive ? 'Mengaktifkan flash sale...' : 'Menonaktifkan...');
+    setError(null);
+    try {
+      const payload = {
+        name: product.name ?? '',
+        price: product.price ?? 0,
+        flash_sale_active: nextActive,
+        flash_sale_discount_type: product.flash_sale_discount_type ?? null,
+        flash_sale_discount_value: product.flash_sale_discount_value ?? null,
+        flash_sale_start_at: product.flash_sale_start_at ?? null,
+        flash_sale_end_at: product.flash_sale_end_at ?? null,
+        flash_sale_stock: product.flash_sale_stock ?? null,
+        flash_sale_variant_id: product.flash_sale_variant_id ?? null,
+        max_qty_per_customer: product.max_qty_per_customer ?? null,
+      };
+      const response = await adminFetch(
+        `${API_BASE}/api/admin/products/${product.id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
+      if (!response.ok) {
+        setError('Gagal mengubah status flash sale.');
+        return;
+      }
+      const refreshed = await adminFetch(`${API_BASE}/api/admin/products`);
+      setProducts(await refreshed.json());
+      setSuccessMessage(
+        nextActive ? 'Flash sale diaktifkan.' : 'Flash sale dinonaktifkan.'
+      );
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteFlashSale = async (product: Product) => {
+    if (actionLoading) return;
+    setActionLoading('Menghapus flash sale...');
+    setError(null);
+    try {
+      const payload = {
+        name: product.name ?? '',
+        price: product.price ?? 0,
+        flash_sale_active: false,
+        flash_sale_discount_type: null,
+        flash_sale_discount_value: null,
+        flash_sale_start_at: null,
+        flash_sale_end_at: null,
+        flash_sale_stock: null,
+        flash_sale_variant_id: null,
+        max_qty_per_customer: null,
+      };
+      const response = await adminFetch(
+        `${API_BASE}/api/admin/products/${product.id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
+      if (!response.ok) {
+        setError('Gagal menghapus flash sale.');
+        return;
+      }
+      const refreshed = await adminFetch(`${API_BASE}/api/admin/products`);
+      setProducts(await refreshed.json());
+      setSuccessMessage('Flash sale dihapus.');
+      setFlashDetail(null);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleUpdateOrder = async (order: Order) => {
     if (actionLoading) return;
     setActionLoading('Menyimpan order...');
     setError(null);
     try {
+      const methods = new Set(
+        (order.items ?? []).map((item) => item.delivery_method ?? 'admin_account')
+      );
+      const payload = {
+        status: order.status,
+        fulfillment_account: null,
+        fulfillment_email: methods.has('admin_account')
+          ? order.fulfillment_email ?? null
+          : null,
+        fulfillment_password: methods.has('admin_account')
+          ? order.fulfillment_password ?? null
+          : null,
+        fulfillment_link: methods.has('link') ? order.fulfillment_link ?? null : null,
+        fulfillment_notes: order.fulfillment_notes ?? null,
+      };
       const response = await adminFetch(`${API_BASE}/api/admin/orders/${order.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: order.status,
-          fulfillment_account: order.fulfillment_account ?? null,
-          fulfillment_email: order.fulfillment_email ?? null,
-          fulfillment_password: order.fulfillment_password ?? null,
-          fulfillment_link: order.fulfillment_link ?? null,
-          fulfillment_notes: order.fulfillment_notes ?? null,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        setError('Gagal memperbarui order.');
+        const data = await response.json().catch(() => null);
+        const message =
+          data?.errors?.fulfillment_email?.[0] ??
+          data?.errors?.fulfillment_password?.[0] ??
+          data?.errors?.fulfillment_link?.[0] ??
+          data?.message ??
+          'Gagal memperbarui order.';
+        setError(message);
         return;
       }
 
@@ -1112,6 +1336,7 @@ export default function AdminPage() {
     );
   };
   const flashStatus = (product: Product) => {
+    if (!product.flash_sale_active) return 'Nonaktif';
     const now = new Date();
     const start = product.flash_sale_start_at
       ? new Date(product.flash_sale_start_at)
@@ -1132,6 +1357,15 @@ export default function AdminPage() {
     }
     return formatRupiah(product.flash_sale_discount_value);
   };
+  const flashVariantLabel = (product: Product) => {
+    if (!product.flash_sale_variant_id) {
+      return product.duration || 'Durasi utama';
+    }
+    const variant = product.variants?.find(
+      (item) => item.id === product.flash_sale_variant_id
+    );
+    return variant?.label || product.duration || 'Durasi utama';
+  };
   const isStockActive = (stock: Stock) => Boolean(stock.is_active);
   const stockProductLabel = useMemo(() => {
     if (!stockForm.product_id) {
@@ -1149,6 +1383,43 @@ export default function AdminPage() {
     if (!flashForm.product_id) return null;
     return products.find((item) => item.id === Number(flashForm.product_id)) ?? null;
   }, [flashForm.product_id, products]);
+  const flashVariantOptions = useMemo(() => {
+    if (!flashProduct) return [];
+    const options: Array<{
+      value: string;
+      label: string;
+      price: number;
+      stock: number | null;
+    }> = [
+      {
+        value: 'base',
+        label: flashProduct.duration || 'Durasi utama',
+        price: flashProduct.price,
+        stock:
+          typeof flashProduct.stock === 'number' ? flashProduct.stock : null,
+      },
+    ];
+    (flashProduct.variants ?? [])
+      .filter((variant) => variant.is_active !== false)
+      .forEach((variant) => {
+        options.push({
+          value: String(variant.id),
+          label: variant.label,
+          price: variant.price,
+          stock: typeof variant.stock === 'number' ? variant.stock : null,
+        });
+      });
+    return options;
+  }, [flashProduct]);
+  const selectedFlashVariant = useMemo(() => {
+    if (!flashProduct) return null;
+    if (!flashForm.flash_sale_variant_id || flashForm.flash_sale_variant_id === 'base') return null;
+    const id = Number(flashForm.flash_sale_variant_id);
+    if (Number.isNaN(id)) return null;
+    return (
+      flashProduct.variants?.find((variant) => variant.id === id) ?? null
+    );
+  }, [flashForm.flash_sale_variant_id, flashProduct]);
   const logoPreview = useMemo(() => {
     if (logoFile) {
       return URL.createObjectURL(logoFile);
@@ -1188,18 +1459,6 @@ export default function AdminPage() {
     }
     setGalleryFiles((prev) => [...prev, ...files]);
   };
-  const handleSetCoverIndex = (index: number) => {
-    if (index <= 0) return;
-    const current = [
-      ...(coverFile ? [coverFile] : []),
-      ...galleryFiles,
-    ];
-    const picked = current[index];
-    if (!picked) return;
-    const next = [picked, ...current.slice(0, index), ...current.slice(index + 1)];
-    setCoverFile(next[0] ?? null);
-    setGalleryFiles(next.slice(1));
-  };
   const handleRemoveSelectedImage = (index: number) => {
     const current = [
       ...(coverFile ? [coverFile] : []),
@@ -1208,17 +1467,6 @@ export default function AdminPage() {
     const next = current.filter((_, i) => i !== index);
     setCoverFile(next[0] ?? null);
     setGalleryFiles(next.slice(1));
-  };
-  const handleSetExistingCover = (index: number) => {
-    if (!existingCover || index <= 0) return;
-    const galleryIndex = index - 1;
-    const nextCover = existingGallery[galleryIndex];
-    if (!nextCover) return;
-    const nextGallery = existingGallery.filter((_, i) => i !== galleryIndex);
-    nextGallery.unshift(existingCover);
-    setExistingCover(nextCover);
-    setExistingGallery(nextGallery);
-    setRemoveCover(false);
   };
   const handleRemoveExistingImage = (index: number) => {
     if (existingCover && index === 0) {
@@ -1319,16 +1567,23 @@ export default function AdminPage() {
                   className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-slate-300"
                 >
                   <div>
-                    <div className="text-sm font-semibold text-ink">{product.name}</div>
-                      <div className="text-xs text-slate-500">
-                        {product.category ?? 'Tanpa kategori'} - {formatRupiah(product.price)} ·{' '}
-                        {product.stock === null || product.stock === undefined
-                          ? 'Stok: unlimited'
-                          : product.stock > 0
-                          ? `Stok: ${product.stock}`
-                          : 'Stok: habis'}
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-semibold text-ink">{product.name}</div>
+                      {product.is_popular ? (
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                          Paling Populer
+                        </span>
+                      ) : null}
                     </div>
+                    <div className="text-xs text-slate-500">
+                      {product.category ?? 'Tanpa kategori'} - {formatRupiah(product.price)} ?{' '}
+                      {product.stock === null || product.stock === undefined
+                        ? 'Stok: unlimited'
+                        : product.stock > 0
+                        ? `Stok: ${product.stock}`
+                        : 'Stok: habis'}
+                    </div>
+                  </div>
                   <div className="flex items-center gap-2 text-xs font-semibold">
                     <button
                       type="button"
@@ -1362,15 +1617,14 @@ export default function AdminPage() {
         </section>
       )}
 
-      {activeTab === 'flashsale' && (
+            {activeTab === 'flashsale' && (
         <section className="mt-8 space-y-6">
           <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-soft">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-ink">Flashsale</h2>
                 <p className="mt-1 text-sm text-slate-600">
-                  Pilih produk yang sudah ada atau buat produk baru untuk
-                  flash sale.
+                  Kelola flash sale: tambah, edit, hapus, dan toggle aktif.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1379,24 +1633,14 @@ export default function AdminPage() {
                   onClick={() => openFlashModal()}
                   className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white"
                 >
-                  Atur Flash Sale
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetProductForm();
-                    setShowProductModal(true);
-                  }}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600"
-                >
-                  Tambah Produk Baru
+                  Tambah Flash Sale
                 </button>
               </div>
             </div>
           </div>
 
           <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-soft">
-            <h3 className="text-base font-semibold text-ink">Produk Flash Sale</h3>
+            <h3 className="text-base font-semibold text-ink">Daftar Flash Sale</h3>
             <div className="mt-4 space-y-3">
               {flashSaleProducts.length === 0 && (
                 <p className="text-sm text-slate-500">
@@ -1406,36 +1650,55 @@ export default function AdminPage() {
               {flashSaleProducts.map((product) => (
                 <div
                   key={`flash-${product.id}`}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setFlashDetail(product)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setFlashDetail(product);
+                    }
+                  }}
+                  className="flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-slate-300"
                 >
                   <div>
-                    <div className="text-sm font-semibold text-ink">
-                      {product.name}
+                    <div className="text-sm font-semibold text-ink">{product.name}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Status: {flashStatus(product)} - Diskon: {flashDiscountLabel(product)}
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
-                      Status: {flashStatus(product)} · Diskon:{' '}
-                      {flashDiscountLabel(product)}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Mulai: {formatDateTime(product.flash_sale_start_at)} · Selesai:{' '}
+                      Mulai: {formatDateTime(product.flash_sale_start_at)} - Selesai:{' '}
                       {formatDateTime(product.flash_sale_end_at)}
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => openFlashModal(product)}
-                      className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDisableFlashSale(product)}
-                      className="rounded-full border border-red-200 px-4 py-2 text-xs font-semibold text-red-600"
-                    >
-                      Nonaktifkan
-                    </button>
+                  <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleToggleFlashSale(product, !product.flash_sale_active);
+                        }}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
+                          product.flash_sale_active ? 'bg-emerald-200' : 'bg-slate-200'
+                        }`}
+                        aria-pressed={product.flash_sale_active ?? false}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 rounded-full bg-white shadow transition ${
+                            product.flash_sale_active ? 'translate-x-4' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                      <span
+                        className={
+                          product.flash_sale_active ? 'text-emerald-700' : 'text-slate-500'
+                        }
+                      >
+                        {product.flash_sale_active ? 'Aktif' : 'Nonaktif'}
+                      </span>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Detail</span>
                   </div>
                 </div>
               ))}
@@ -1891,11 +2154,33 @@ export default function AdminPage() {
                         {orderModal.items?.map((item) => (
                           <div
                             key={item.id}
-                            className="flex items-center justify-between py-2 text-sm"
+                            className="flex items-start justify-between gap-3 py-2 text-sm"
                           >
-                            <span>
-                              {item.product_name_snapshot} x{item.qty}
-                            </span>
+                            <div>
+                              <div className="font-semibold text-ink">
+                                {item.product_name_snapshot} x{item.qty}
+                              </div>
+                              <div className="mt-0.5 text-xs text-slate-500">
+                                Metode: {getMethodLabel(item.delivery_method)}
+                              </div>
+                              {(item.customer_email ||
+                                item.customer_password ||
+                                item.customer_note) && (
+                                <div className="mt-1 space-y-0.5 text-xs text-slate-500">
+                                  {item.customer_email && (
+                                    <div>Email user: {item.customer_email}</div>
+                                  )}
+                                  {item.customer_password && (
+                                    <div>Password user: {item.customer_password}</div>
+                                  )}
+                                  {item.customer_note && (
+                                    <div className="break-words">
+                                      Catatan user: {item.customer_note}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                             <span className="font-semibold text-ink">
                               {formatRupiah(item.line_total)}
                             </span>
@@ -1945,32 +2230,33 @@ export default function AdminPage() {
 
                     <div className="px-5 py-4 text-sm">
                       <div className="text-xs uppercase tracking-wide text-slate-400">
-                        Akun / Link Premium
+                        Output Admin
                       </div>
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        {[
-                          ['Akun', displayValue(orderModal.fulfillment_account)],
-                          ['Email', displayValue(orderModal.fulfillment_email)],
-                          ['Password', displayValue(orderModal.fulfillment_password)],
-                        ].map(([label, value]) => (
-                          <div
-                            key={label}
-                            className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
-                          >
-                            <div className="text-[11px] uppercase text-slate-400">
-                              {label}
-                            </div>
+                        {requiresFulfillmentEmail && (
+                          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                            <div className="text-[11px] uppercase text-slate-400">Email</div>
                             <div className="mt-1 text-sm font-semibold text-ink">
-                              {value}
+                              {displayValue(orderModal.fulfillment_email)}
                             </div>
                           </div>
-                        ))}
-                        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 sm:col-span-2">
-                          <div className="text-[11px] uppercase text-slate-400">Link</div>
-                          <div className="mt-1 break-all text-sm font-semibold text-ink">
-                            {displayValue(orderModal.fulfillment_link)}
+                        )}
+                        {requiresFulfillmentPassword && (
+                          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                            <div className="text-[11px] uppercase text-slate-400">Password</div>
+                            <div className="mt-1 text-sm font-semibold text-ink">
+                              {displayValue(orderModal.fulfillment_password)}
+                            </div>
                           </div>
-                        </div>
+                        )}
+                        {requiresFulfillmentLink && (
+                          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 sm:col-span-2">
+                            <div className="text-[11px] uppercase text-slate-400">Link</div>
+                            <div className="mt-1 break-all text-sm font-semibold text-ink">
+                              {displayValue(orderModal.fulfillment_link)}
+                            </div>
+                          </div>
+                        )}
                         <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 sm:col-span-2">
                           <div className="text-[11px] uppercase text-slate-400">
                             Catatan
@@ -2017,6 +2303,16 @@ export default function AdminPage() {
                     <p className="mt-2 text-sm text-slate-500">
                       Lengkapi status dan kirim akun/link setelah pembayaran valid.
                     </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {orderModalMethods.map((method) => (
+                        <span
+                          key={method}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600"
+                        >
+                          {getMethodLabel(method)}
+                        </span>
+                      ))}
+                    </div>
                     <div className="mt-5 space-y-4">
                       <div>
                         <div className="text-[11px] uppercase text-slate-400">
@@ -2041,63 +2337,57 @@ export default function AdminPage() {
 
                       <div>
                         <div className="text-[11px] uppercase text-slate-400">
-                          Akun Premium
+                          Detail Pengiriman
                         </div>
                         <div className="mt-2 grid gap-3">
-                          <input
-                            value={orderModal.fulfillment_account ?? ''}
-                            onChange={(event) =>
-                              setOrderModal((prev) =>
-                                prev
-                                  ? { ...prev, fulfillment_account: event.target.value }
-                                  : prev
-                              )
-                            }
-                            placeholder="Akun / Username"
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                          />
-                          <input
-                            value={orderModal.fulfillment_email ?? ''}
-                            onChange={(event) =>
-                              setOrderModal((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      fulfillment_email: event.target.value,
-                                    }
-                                  : prev
-                              )
-                            }
-                            placeholder="Email akun premium"
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                          />
-                          <input
-                            value={orderModal.fulfillment_password ?? ''}
-                            onChange={(event) =>
-                              setOrderModal((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      fulfillment_password: event.target.value,
-                                    }
-                                  : prev
-                              )
-                            }
-                            placeholder="Password akun premium"
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                          />
-                          <input
-                            value={orderModal.fulfillment_link ?? ''}
-                            onChange={(event) =>
-                              setOrderModal((prev) =>
-                                prev
-                                  ? { ...prev, fulfillment_link: event.target.value }
-                                  : prev
-                              )
-                            }
-                            placeholder="Link / invite"
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                          />
+                          {requiresFulfillmentEmail && (
+                            <input
+                              value={orderModal.fulfillment_email ?? ''}
+                              onChange={(event) =>
+                                setOrderModal((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        fulfillment_email: event.target.value,
+                                      }
+                                    : prev
+                                )
+                              }
+                              placeholder="Email akun premium"
+                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                            />
+                          )}
+                          {requiresFulfillmentPassword && (
+                            <input
+                              value={orderModal.fulfillment_password ?? ''}
+                              onChange={(event) =>
+                                setOrderModal((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        fulfillment_password: event.target.value,
+                                      }
+                                    : prev
+                                )
+                              }
+                              placeholder="Password akun premium"
+                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                            />
+                          )}
+                          {requiresFulfillmentLink && (
+                            <input
+                              value={orderModal.fulfillment_link ?? ''}
+                              onChange={(event) =>
+                                setOrderModal((prev) =>
+                                  prev
+                                    ? { ...prev, fulfillment_link: event.target.value }
+                                    : prev
+                                )
+                              }
+                              placeholder="Link / invite"
+                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                            />
+                          )}
                           <textarea
                             value={orderModal.fulfillment_notes ?? ''}
                             onChange={(event) =>
@@ -2113,6 +2403,14 @@ export default function AdminPage() {
                             placeholder="Catatan admin (bisa enter)"
                             className="min-h-[110px] w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
                           />
+                          {!requiresFulfillmentEmail &&
+                            !requiresFulfillmentPassword &&
+                            !requiresFulfillmentLink && (
+                              <p className="text-xs text-slate-500">
+                                Metode order ini tidak membutuhkan kirim akun/email/link.
+                                Isi catatan jika diperlukan.
+                              </p>
+                            )}
                         </div>
                       </div>
                     </div>
@@ -2722,6 +3020,130 @@ export default function AdminPage() {
         </div>
       )}
 
+      {flashDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
+          <button
+            type="button"
+            onClick={() => setFlashDetail(null)}
+            className="absolute inset-0 h-full w-full"
+            aria-label="Tutup"
+          />
+          <div className="relative z-10 w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="grid max-h-[90vh] gap-6 overflow-y-auto p-6 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="space-y-4">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-400">
+                    Detail Flashsale
+                  </div>
+                  <div className="mt-2 text-xl font-semibold text-ink">
+                    {flashDetail.name}
+                  </div>
+                  <div className="mt-1 text-sm text-slate-500">
+                    {flashVariantLabel(flashDetail)}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                    <div className="text-xs uppercase tracking-wide text-slate-400">
+                      Status
+                    </div>
+                    <div className="mt-2 font-semibold text-ink">
+                      {flashStatus(flashDetail)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                    <div className="text-xs uppercase tracking-wide text-slate-400">
+                      Diskon
+                    </div>
+                    <div className="mt-2 font-semibold text-ink">
+                      {flashDiscountLabel(flashDetail)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                  <div className="text-xs uppercase tracking-wide text-slate-400">
+                    Periode
+                  </div>
+                  <div className="mt-2 text-sm text-ink">
+                    Mulai: {formatDateTime(flashDetail.flash_sale_start_at)}
+                  </div>
+                  <div className="mt-1 text-sm text-ink">
+                    Selesai: {formatDateTime(flashDetail.flash_sale_end_at)}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                    <div className="text-xs uppercase tracking-wide text-slate-400">
+                      Stok Flashsale
+                    </div>
+                    <div className="mt-2 font-semibold text-ink">
+                      {displayValue(flashDetail.flash_sale_stock)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                    <div className="text-xs uppercase tracking-wide text-slate-400">
+                      Maksimal / Pelanggan
+                    </div>
+                    <div className="mt-2 font-semibold text-ink">
+                      {displayValue(flashDetail.max_qty_per_customer)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                  <div className="text-xs uppercase tracking-wide text-slate-400">
+                    Info Produk
+                  </div>
+                  <div className="mt-2 text-sm text-ink">
+                    Harga normal: {formatRupiah(flashDetail.price)}
+                  </div>
+                  <div className="mt-1 text-sm text-ink">
+                    Stok katalog:{' '}
+                    {flashDetail.stock === null || flashDetail.stock === undefined
+                      ? 'unlimited'
+                      : flashDetail.stock > 0
+                      ? flashDetail.stock
+                      : 'habis'}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFlashDetail(null);
+                      openFlashModal(flashDetail);
+                    }}
+                    className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteFlashSale(flashDetail)}
+                    className="rounded-full border border-red-200 px-4 py-2 text-xs font-semibold text-red-600"
+                  >
+                    Hapus
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFlashDetail(null)}
+                    className="rounded-full bg-ink px-5 py-2 text-xs font-semibold text-white"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showFlashModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
           <button
@@ -2758,6 +3180,25 @@ export default function AdminPage() {
                   ))}
                 </select>
 
+                <select
+                  value={flashForm.flash_sale_variant_id}
+                  onChange={(event) =>
+                    setFlashForm((prev) => ({
+                      ...prev,
+                      flash_sale_variant_id: event.target.value,
+                    }))
+                  }
+                  disabled={!flashProduct}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
+                >
+                  <option value="">Pilih durasi flash sale</option>
+                  {flashVariantOptions.map((option) => (
+                    <option key={`flash-variant-${option.value}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
                   <div className="text-xs uppercase tracking-wide text-slate-400">
                     Info Produk
@@ -2766,49 +3207,33 @@ export default function AdminPage() {
                     {flashProduct?.name ?? 'Belum dipilih'}
                   </div>
                   <div className="mt-1 text-xs text-slate-500">
+                    Durasi:{' '}
+                    {selectedFlashVariant?.label ??
+                    flashProduct?.duration ??
+                    (flashProduct ? 'Durasi utama' : '-')}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
                     Harga normal:{' '}
-                    {flashProduct ? formatRupiah(flashProduct.price) : '-'}
+                    {flashProduct
+                      ? formatRupiah(selectedFlashVariant?.price ?? flashProduct.price)
+                      : '-'}
                   </div>
                   <div className="mt-1 text-xs text-slate-500">
                     Stok:{' '}
-                    {flashProduct?.stock === null ||
-                    flashProduct?.stock === undefined
-                      ? 'unlimited'
-                      : flashProduct.stock}
+                    {(() => {
+                      if (!flashProduct) return '-';
+                      const stock =
+                        typeof selectedFlashVariant?.stock === 'number'
+                          ? selectedFlashVariant.stock
+                          : flashProduct.stock;
+                      if (stock === null || stock === undefined) return 'unlimited';
+                      return stock;
+                    })()}
                   </div>
                 </div>
               </div>
 
               <div className="space-y-4">
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-sm">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-400">
-                      Status Flashsale
-                    </div>
-                    <div className="mt-1 font-semibold text-ink">
-                      {flashForm.flash_sale_active ? 'Aktif' : 'Nonaktif'}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFlashForm((prev) => ({
-                        ...prev,
-                        flash_sale_active: !prev.flash_sale_active,
-                      }))
-                    }
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                      flashForm.flash_sale_active ? 'bg-emerald-200' : 'bg-slate-200'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${
-                        flashForm.flash_sale_active ? 'translate-x-5' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-
                 <div className="grid gap-3 sm:grid-cols-2">
                   <select
                     value={flashForm.flash_sale_discount_type}
@@ -2995,6 +3420,107 @@ export default function AdminPage() {
                   placeholder="Garansi"
                   className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
                 />
+                <select
+                  value={productForm.method}
+                  onChange={(event) =>
+                    setProductForm((prev) => ({ ...prev, method: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                >
+                  {METHOD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">
+                        Durasi & Harga (Opsional)
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Tambahkan beberapa durasi jika harga/garansi berbeda.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddVariant}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+                    >
+                      Tambah Durasi
+                    </button>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {productForm.variants.map((variant, index) => (
+                      <div
+                        key={`variant-${index}`}
+                        className="rounded-2xl border border-slate-200 bg-white p-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-semibold text-slate-500">
+                            Varian #{index + 1}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveVariant(index)}
+                            className="text-xs font-semibold text-red-500"
+                          >
+                            Hapus
+                          </button>
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          <input
+                            value={variant.label}
+                            onChange={(event) =>
+                              handleUpdateVariant(index, 'label', event.target.value)
+                            }
+                            placeholder="Durasi (contoh: 1 Bulan)"
+                            className="rounded-xl border border-slate-200 px-3 py-2 text-xs"
+                          />
+                          <input
+                            value={variant.price}
+                            onChange={(event) =>
+                              handleUpdateVariant(index, 'price', event.target.value)
+                            }
+                            placeholder="Harga"
+                            className="rounded-xl border border-slate-200 px-3 py-2 text-xs"
+                          />
+                          <select
+                            value={variant.method}
+                            onChange={(event) =>
+                              handleUpdateVariant(index, 'method', event.target.value)
+                            }
+                            className="rounded-xl border border-slate-200 px-3 py-2 text-xs"
+                          >
+                            {METHOD_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            value={variant.warranty}
+                            onChange={(event) =>
+                              handleUpdateVariant(index, 'warranty', event.target.value)
+                            }
+                            placeholder="Garansi"
+                            className="rounded-xl border border-slate-200 px-3 py-2 text-xs"
+                          />
+                          <input
+                            value={variant.stock}
+                            onChange={(event) =>
+                              handleUpdateVariant(index, 'stock', event.target.value)
+                            }
+                            placeholder="Stok (kosong = unlimited)"
+                            className="rounded-xl border border-slate-200 px-3 py-2 text-xs sm:col-span-2"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -3005,8 +3531,13 @@ export default function AdminPage() {
                         Upload Gambar Produk
                       </div>
                       <p className="mt-1 text-xs text-slate-500">
-                        Pilih beberapa gambar, lalu klik salah satu untuk jadi cover.
+                        Aturan: gambar pertama jadi cover kartu produk. Sisanya masuk galeri detail.
                       </p>
+                      <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] text-slate-500">
+                        <li>Upload semua foto produk dalam urutan yang diinginkan.</li>
+                        <li>Foto urutan pertama otomatis ditandai sebagai cover.</li>
+                        <li>Gunakan tombol hapus per foto jika ingin ganti urutan.</li>
+                      </ol>
                     </div>
                     <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-500">
                       JPG / PNG
@@ -3037,15 +3568,7 @@ export default function AdminPage() {
                               <span className="absolute left-1 top-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white">
                                 Cover
                               </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleSetExistingCover(index)}
-                                className="absolute left-1 top-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-slate-700 opacity-0 transition group-hover:opacity-100"
-                              >
-                                Jadikan cover
-                              </button>
-                            )}
+                            ) : null}
                             <button
                               type="button"
                               onClick={() => handleRemoveExistingImage(index)}
@@ -3083,15 +3606,7 @@ export default function AdminPage() {
                               <span className="absolute left-1 top-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white">
                                 Cover
                               </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleSetCoverIndex(index)}
-                                className="absolute left-1 top-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-slate-700 opacity-0 transition group-hover:opacity-100"
-                              >
-                                Jadikan cover
-                              </button>
-                            )}
+                            ) : null}
                             <button
                               type="button"
                               onClick={() => handleRemoveSelectedImage(index)}
@@ -3110,7 +3625,7 @@ export default function AdminPage() {
                       <span className="text-sm font-semibold text-slate-700">
                         Upload gambar
                       </span>
-                      <span>Pilih beberapa gambar sekaligus.</span>
+                      <span>Pilih banyak gambar sekaligus (gambar paling pertama = cover).</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -3169,6 +3684,20 @@ export default function AdminPage() {
                     className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
                   />
                 </div>
+                <label className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <span className="font-semibold">Kelas paling populer</span>
+                  <input
+                    type="checkbox"
+                    checked={productForm.is_popular}
+                    onChange={(event) =>
+                      setProductForm((prev) => ({
+                        ...prev,
+                        is_popular: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 accent-amber-500"
+                  />
+                </label>
                 <div className="flex flex-wrap gap-2">
                 <button
                   type="button"

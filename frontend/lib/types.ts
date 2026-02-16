@@ -1,3 +1,13 @@
+export type ProductVariant = {
+  id: number;
+  label: string;
+  price: number;
+  method?: string | null;
+  warranty?: string | null;
+  stock?: number | null;
+  is_active?: boolean;
+};
+
 export type Product = {
   id: number;
   name: string;
@@ -8,6 +18,8 @@ export type Product = {
   image_url?: string | null;
   duration?: string | null;
   warranty?: string | null;
+  method?: string | null;
+  variants?: ProductVariant[] | null;
   product_images?: string[] | null;
   discount_type?: 'PERCENT' | 'FIXED' | null;
   discount_value?: number | null;
@@ -20,8 +32,11 @@ export type Product = {
   flash_sale_stock?: number | null;
   flash_sale_sold?: number | null;
   flash_sale_remaining?: number | null;
+  flash_sale_variant_id?: number | null;
   max_qty_per_customer?: number | null;
+  is_popular?: boolean | null;
   is_active: boolean;
+  created_at?: string | null;
 };
 
 export type SiteSettings = {
@@ -37,7 +52,15 @@ export type OrderItem = {
   id: number;
   order_id: number;
   product_id: number;
+  product_variant_id?: number | null;
   product_name_snapshot: string;
+  variant_label?: string | null;
+  duration_snapshot?: string | null;
+  warranty_snapshot?: string | null;
+  delivery_method?: string | null;
+  customer_email?: string | null;
+  customer_password?: string | null;
+  customer_note?: string | null;
   unit_price: number;
   qty: number;
   line_total: number;

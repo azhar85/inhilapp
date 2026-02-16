@@ -8,13 +8,17 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import type { Product } from '@/lib/types';
-import { getPricing } from '@/lib/pricing';
+import type { Product, ProductVariant } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 
 export type CartItem = {
   product_id: number;
+  variant_id?: number | null;
+  variant_label?: string | null;
+  duration?: string | null;
+  warranty?: string | null;
+  method?: string | null;
   name: string;
   price: number;
   originalPrice: number;
@@ -29,9 +33,14 @@ export type CartItem = {
 
 type CartContextValue = {
   items: CartItem[];
-  addItem: (product: Product, qty?: number, mode?: 'catalog' | 'flash') => void;
-  updateQty: (productId: number, qty: number) => void;
-  removeItem: (productId: number) => void;
+  addItem: (
+    product: Product,
+    qty?: number,
+    mode?: 'catalog' | 'flash',
+    variant?: ProductVariant | null
+  ) => void;
+  updateQty: (productId: number, variantId: number | null, qty: number) => void;
+  removeItem: (productId: number, variantId: number | null) => void;
   clear: () => void;
   total: number;
   subtotal: number;
@@ -48,8 +57,27 @@ type CartContextValue = {
 
 const STORAGE_KEY = 'inhilapp_cart_v2';
 
-function getFlashPrice(product: Product): number {
-  const original = product.price;
+const normalizeVariantId = (id?: number | null) => (id ? Number(id) : null);
+
+function applyDiscount(
+  basePrice: number,
+  type?: 'PERCENT' | 'FIXED' | null,
+  value?: number | null
+): number {
+  if (!type || !value || value <= 0) return basePrice;
+  let discount = 0;
+  if (type === 'PERCENT') {
+    discount = Math.round(basePrice * (value / 100));
+  } else if (type === 'FIXED') {
+    discount = value;
+  }
+  if (discount < 0) discount = 0;
+  if (discount > basePrice) discount = basePrice;
+  return basePrice - discount;
+}
+
+function getFlashPrice(product: Product, basePrice: number): number {
+  const original = basePrice;
   const type = product.flash_sale_discount_type ?? null;
   const value = product.flash_sale_discount_value ?? 0;
 
@@ -120,6 +148,7 @@ function loadCart(): StoredCart {
       const discountLabel = item.discountLabel ?? (discountAmount > 0 ? 'Diskon' : null);
       return {
         ...item,
+        variant_id: normalizeVariantId(item.variant_id),
         originalPrice,
         price,
         discountAmount,
@@ -171,37 +200,75 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setVoucherLabel(null);
   }, []);
 
-  const addItem = (product: Product, qty = 1, mode: 'catalog' | 'flash' = 'catalog') => {
+  const addItem = (
+    product: Product,
+    qty = 1,
+    mode: 'catalog' | 'flash' = 'catalog',
+    variant: ProductVariant | null = null
+  ) => {
     const now = new Date();
     const flashActive = isFlashActive(product, now);
+    const variantId = normalizeVariantId(variant?.id);
+    const flashVariantId = normalizeVariantId(product.flash_sale_variant_id ?? null);
+    const flashVariantMatch =
+      flashVariantId === null ? variantId === null : flashVariantId === variantId;
 
-    const baseStock = typeof product.stock === 'number' ? product.stock : null;
+    const basePrice = variant?.price ?? product.price;
+    const baseStock =
+      typeof variant?.stock === 'number'
+        ? variant?.stock
+        : typeof product.stock === 'number'
+        ? product.stock
+        : null;
     const flashStock =
-      flashActive && mode === 'flash' && product.flash_sale_active
+      flashActive &&
+      mode === 'flash' &&
+      product.flash_sale_active &&
+      flashVariantMatch
         ? getFlashRemaining(product)
         : null;
-    // Katalog tetap mengikuti stok produk normal; flash card mengikuti stok flash.
+    // Flash sale pakai stok flash sendiri (tanpa ambil stok katalog).
     const effectiveStock = flashStock !== null ? flashStock : baseStock;
     const maxQty =
-      flashActive && mode === 'flash' && product.max_qty_per_customer
+      flashActive &&
+      mode === 'flash' &&
+      flashVariantMatch &&
+      product.max_qty_per_customer
         ? product.max_qty_per_customer
         : null;
 
-    const useFlashPricing = flashActive && mode === 'flash';
-    const flashPrice = useFlashPricing ? getFlashPrice(product) : null;
+    const useFlashPricing = flashActive && mode === 'flash' && flashVariantMatch;
+    const flashPrice = useFlashPricing ? getFlashPrice(product, basePrice) : null;
     const pricing = useFlashPricing && flashPrice !== null
       ? {
-          originalPrice: product.price,
+          originalPrice: basePrice,
           finalPrice: flashPrice,
-          discountAmount: Math.max(product.price - flashPrice, 0),
+          discountAmount: Math.max(basePrice - flashPrice, 0),
           discountLabel: 'Flash Sale',
         }
-      : getPricing(product);
+      : (() => {
+          const finalPrice = applyDiscount(
+            basePrice,
+            product.discount_type ?? null,
+            product.discount_value ?? null
+          );
+          const discountAmount = Math.max(basePrice - finalPrice, 0);
+          return {
+            originalPrice: basePrice,
+            finalPrice,
+            discountAmount,
+            discountLabel: discountAmount > 0 ? 'Diskon' : null,
+          };
+        })();
 
     const itemMode: 'catalog' | 'flash' = useFlashPricing ? 'flash' : 'catalog';
 
     setItems((prev) => {
-      const existing = prev.find((item) => item.product_id === product.id);
+      const existing = prev.find(
+        (item) =>
+          item.product_id === product.id &&
+          normalizeVariantId(item.variant_id) === variantId
+      );
       if (existing) {
         const nextQty = existing.qty + qty;
         let cappedQty = nextQty;
@@ -213,7 +280,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }
         if (cappedQty <= 0 || cappedQty === existing.qty) {
           return prev.map((item) =>
-            item.product_id === product.id
+            item.product_id === product.id &&
+            normalizeVariantId(item.variant_id) === variantId
               ? {
                   ...item,
                   stock: effectiveStock ?? item.stock ?? null,
@@ -224,7 +292,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           );
         }
         return prev.map((item) =>
-          item.product_id === product.id
+          item.product_id === product.id &&
+          normalizeVariantId(item.variant_id) === variantId
             ? {
                 ...item,
                 price: pricing.finalPrice,
@@ -256,6 +325,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         {
           product_id: product.id,
+          variant_id: variantId,
+          variant_label: variant?.label ?? null,
+          duration: variant?.label ?? product.duration ?? null,
+          warranty: variant?.warranty ?? product.warranty ?? null,
+          method: variant?.method ?? product.method ?? null,
           name: product.name,
           price: pricing.finalPrice,
           originalPrice: pricing.originalPrice,
@@ -272,11 +346,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     clearVoucher();
   };
 
-  const updateQty = (productId: number, qty: number) => {
+  const updateQty = (productId: number, variantId: number | null, qty: number) => {
     setItems((prev) =>
       prev
         .map((item) =>
-          item.product_id === productId
+          item.product_id === productId &&
+          normalizeVariantId(item.variant_id) === normalizeVariantId(variantId)
             ? {
                 ...item,
                 qty: (() => {
@@ -297,8 +372,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     clearVoucher();
   };
 
-  const removeItem = (productId: number) => {
-    setItems((prev) => prev.filter((item) => item.product_id !== productId));
+  const removeItem = (productId: number, variantId: number | null) => {
+    setItems((prev) =>
+      prev.filter(
+        (item) =>
+          !(
+            item.product_id === productId &&
+            normalizeVariantId(item.variant_id) === normalizeVariantId(variantId)
+          )
+      )
+    );
     clearVoucher();
   };
 
@@ -342,29 +425,59 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               continue;
             }
 
-            const baseStock = typeof product.stock === 'number' ? product.stock : null;
+            const variantId = normalizeVariantId(item.variant_id);
+            const variant = variantId
+              ? product.variants?.find((entry) => entry.id === variantId) ?? null
+              : null;
+
+            if (variantId && (!variant || variant.is_active === false)) {
+              changed = true;
+              continue;
+            }
+
+            const basePrice = variant?.price ?? product.price;
+            const baseStock =
+              typeof variant?.stock === 'number'
+                ? variant?.stock
+                : typeof product.stock === 'number'
+                ? product.stock
+                : null;
+
             const isFlashItem = item.mode === 'flash' || item.discountLabel === 'Flash Sale';
 
             if (isFlashItem) {
               const flashActive = isFlashActive(product, now);
+              const flashVariantId = normalizeVariantId(
+                product.flash_sale_variant_id ?? null
+              );
+              const flashVariantMatch =
+                flashVariantId === null
+                  ? variantId === null
+                  : flashVariantId === variantId;
               const flashRemaining = getFlashRemaining(product);
-              if (!flashActive || (flashRemaining !== null && flashRemaining <= 0)) {
+              if (
+                !flashActive ||
+                !flashVariantMatch ||
+                (flashRemaining !== null && flashRemaining <= 0)
+              ) {
                 changed = true;
                 continue;
               }
 
               const maxQty = product.max_qty_per_customer ?? null;
-              const flashFinalPrice = getFlashPrice(product);
+              const flashFinalPrice = getFlashPrice(product, basePrice);
               const pricing = {
-                originalPrice: product.price,
+                originalPrice: basePrice,
                 finalPrice: flashFinalPrice,
-                discountAmount: Math.max(product.price - flashFinalPrice, 0),
+                discountAmount: Math.max(basePrice - flashFinalPrice, 0),
                 discountLabel: 'Flash Sale' as const,
               };
 
               let nextQty = item.qty;
-              if (flashRemaining !== null) {
-                nextQty = Math.min(nextQty, flashRemaining);
+              const effectiveStock = flashRemaining !== null ? flashRemaining : null;
+
+              if (effectiveStock !== null) {
+                nextQty = Math.min(nextQty, effectiveStock);
               }
               if (maxQty !== null) {
                 nextQty = Math.min(nextQty, maxQty);
@@ -383,10 +496,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 originalPrice: pricing.originalPrice,
                 discountAmount: pricing.discountAmount,
                 discountLabel: pricing.discountLabel,
-                stock: flashRemaining,
+                stock: effectiveStock,
                 maxQty,
                 mode: 'flash',
                 qty: nextQty,
+                variant_id: variantId,
+                variant_label: variant?.label ?? null,
+                duration: variant?.label ?? product.duration ?? null,
+                warranty: variant?.warranty ?? product.warranty ?? null,
+                method: variant?.method ?? product.method ?? null,
               };
 
               if (
@@ -399,7 +517,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 normalizedItem.stock !== item.stock ||
                 normalizedItem.maxQty !== item.maxQty ||
                 normalizedItem.qty !== item.qty ||
-                normalizedItem.mode !== item.mode
+                normalizedItem.mode !== item.mode ||
+                normalizedItem.variant_id !== item.variant_id
               ) {
                 changed = true;
               }
@@ -418,7 +537,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               continue;
             }
 
-            const pricing = getPricing(product);
+            const finalPrice = applyDiscount(
+              basePrice,
+              product.discount_type ?? null,
+              product.discount_value ?? null
+            );
+            const pricing = {
+              originalPrice: basePrice,
+              finalPrice,
+              discountAmount: Math.max(basePrice - finalPrice, 0),
+              discountLabel: Math.max(basePrice - finalPrice, 0) > 0 ? 'Diskon' : null,
+            };
             const normalizedItem: CartItem = {
               ...item,
               name: product.name,
@@ -431,6 +560,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               maxQty: null,
               mode: 'catalog',
               qty: nextQty,
+              variant_id: variantId,
+              variant_label: variant?.label ?? null,
+              duration: variant?.label ?? product.duration ?? null,
+              warranty: variant?.warranty ?? product.warranty ?? null,
+              method: variant?.method ?? product.method ?? null,
             };
 
             if (
@@ -443,7 +577,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               normalizedItem.stock !== item.stock ||
               normalizedItem.maxQty !== item.maxQty ||
               normalizedItem.qty !== item.qty ||
-              normalizedItem.mode !== item.mode
+              normalizedItem.mode !== item.mode ||
+              normalizedItem.variant_id !== item.variant_id
             ) {
               changed = true;
             }

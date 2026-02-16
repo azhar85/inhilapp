@@ -18,6 +18,7 @@ class Product extends Model
         'image_url',
         'duration',
         'warranty',
+        'method',
         'product_images',
         'discount_type',
         'discount_value',
@@ -27,9 +28,11 @@ class Product extends Model
         'flash_sale_discount_value',
         'flash_sale_start_at',
         'flash_sale_end_at',
+        'flash_sale_variant_id',
         'flash_sale_stock',
         'flash_sale_sold',
         'max_qty_per_customer',
+        'is_popular',
         'is_active',
     ];
 
@@ -47,10 +50,17 @@ class Product extends Model
         'flash_sale_discount_value' => 'integer',
         'flash_sale_start_at' => 'datetime',
         'flash_sale_end_at' => 'datetime',
+        'flash_sale_variant_id' => 'integer',
         'flash_sale_stock' => 'integer',
         'flash_sale_sold' => 'integer',
         'max_qty_per_customer' => 'integer',
+        'is_popular' => 'boolean',
     ];
+
+    public function variants()
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
 
     public function getFlashSaleRemainingAttribute(): ?int
     {

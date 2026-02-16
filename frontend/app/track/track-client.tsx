@@ -7,6 +7,12 @@ import { formatRupiah } from '@/lib/formatRupiah';
 import type { Order, SiteSettings } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
+const METHOD_LABELS: Record<string, string> = {
+  invite: 'Invite',
+  admin_account: 'Akun Admin',
+  own_account: 'Akun Kamu',
+  link: 'Link',
+};
 
 export default function TrackClient() {
   const searchParams = useSearchParams();
@@ -37,8 +43,17 @@ export default function TrackClient() {
   }, [order?.created_at]);
 
   const hasProof = Boolean(order?.payment_proof_uploaded_at);
+  const orderMethods = useMemo(
+    () =>
+      Array.from(
+        new Set((order?.items ?? []).map((item) => item.delivery_method ?? 'admin_account'))
+      ),
+    [order?.items]
+  );
+  const needsFulfillmentEmail = orderMethods.includes('admin_account');
+  const needsFulfillmentPassword = orderMethods.includes('admin_account');
+  const needsFulfillmentLink = orderMethods.includes('link');
   const hasFulfillment =
-    Boolean(order?.fulfillment_account) ||
     Boolean(order?.fulfillment_email) ||
     Boolean(order?.fulfillment_password) ||
     Boolean(order?.fulfillment_link) ||
@@ -208,6 +223,16 @@ export default function TrackClient() {
                     Status pesanan terkini
                   </span>
                 </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {orderMethods.map((method) => (
+                    <span
+                      key={method}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+                    >
+                      {METHOD_LABELS[method] ?? method}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -252,8 +277,22 @@ export default function TrackClient() {
                       {item.product_name_snapshot}
                     </div>
                     <div className="text-xs text-slate-500">
+                      Metode: {METHOD_LABELS[item.delivery_method ?? 'admin_account'] ?? item.delivery_method}
+                    </div>
+                    <div className="text-xs text-slate-500">
                       {item.qty} x {formatRupiah(item.unit_price)}
                     </div>
+                    {(item.customer_email || item.customer_password || item.customer_note) && (
+                      <div className="mt-1 space-y-0.5 text-xs text-slate-500">
+                        {item.customer_email && <div>Email user: {item.customer_email}</div>}
+                        {item.customer_password && (
+                          <div>Password user: {item.customer_password}</div>
+                        )}
+                        {item.customer_note && (
+                          <div className="break-words">Catatan user: {item.customer_note}</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="font-semibold text-ink">
                     {formatRupiah(item.line_total)}
@@ -276,10 +315,9 @@ export default function TrackClient() {
           </div>
 
           <div className="rounded-2xl border border-white/60 bg-white/70 p-6 shadow-soft">
-            <div className="text-sm font-semibold text-ink">Akun / Link Premium</div>
+            <div className="text-sm font-semibold text-ink">DETAIL</div>
             {(() => {
               const hasFulfillment =
-                Boolean(order.fulfillment_account) ||
                 Boolean(order.fulfillment_email) ||
                 Boolean(order.fulfillment_password) ||
                 Boolean(order.fulfillment_link) ||
@@ -297,17 +335,7 @@ export default function TrackClient() {
 
               return (
                 <div className="mt-4 space-y-3 text-sm text-slate-700">
-                  {order.fulfillment_account && (
-                    <div>
-                      <div className="text-xs uppercase tracking-wide text-slate-500">
-                        Akun / Credential
-                      </div>
-                      <div className="mt-2 whitespace-pre-line rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        {order.fulfillment_account}
-                      </div>
-                    </div>
-                  )}
-                  {order.fulfillment_email && (
+                  {needsFulfillmentEmail && order.fulfillment_email && (
                     <div>
                       <div className="text-xs uppercase tracking-wide text-slate-500">
                         Email
@@ -317,7 +345,7 @@ export default function TrackClient() {
                       </div>
                     </div>
                   )}
-                  {order.fulfillment_password && (
+                  {needsFulfillmentPassword && order.fulfillment_password && (
                     <div>
                       <div className="text-xs uppercase tracking-wide text-slate-500">
                         Password
@@ -327,7 +355,7 @@ export default function TrackClient() {
                       </div>
                     </div>
                   )}
-                  {order.fulfillment_link && (
+                  {needsFulfillmentLink && order.fulfillment_link && (
                     <div>
                       <div className="text-xs uppercase tracking-wide text-slate-500">
                         Link / Invite

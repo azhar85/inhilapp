@@ -20,6 +20,10 @@ export default function PayPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showQris, setShowQris] = useState(false);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
+  const [itemInputs, setItemInputs] = useState<
+    Record<number, { email: string; password: string }>
+  >({});
+  const [globalNote, setGlobalNote] = useState('');
 
   const subtotal = useMemo(() => {
     if (!order?.items) return 0;
@@ -54,6 +58,23 @@ export default function PayPage() {
 
         const data = (await response.json()) as Order;
         setOrder(data);
+        setItemInputs((prev) => {
+          const next: Record<number, { email: string; password: string }> = {
+            ...prev,
+          };
+          data.items?.forEach((item) => {
+            if (!next[item.id]) {
+              next[item.id] = {
+                email: item.customer_email ?? '',
+                password: item.customer_password ?? '',
+              };
+            }
+          });
+          return next;
+        });
+        if (data.items?.[0]?.customer_note && !globalNote) {
+          setGlobalNote(data.items[0].customer_note ?? '');
+        }
       } catch (err) {
         if (!(err instanceof DOMException && err.name === 'AbortError')) {
           setError('Gagal memuat order.');
@@ -93,6 +114,25 @@ export default function PayPage() {
   const qrisUrl = settings?.qris_url || '/qris.png';
   const storeName = settings?.store_name || 'InhilApp';
 
+  const resolveMethodLabel = (method?: string | null) => {
+    if (!method) return 'Akun Admin';
+    if (method === 'invite') return 'Invite';
+    if (method === 'own_account') return 'Akun Kamu';
+    if (method === 'link') return 'Link';
+    if (method === 'admin_account') return 'Akun Admin';
+    return method;
+  };
+
+  const getMethodRules = (method?: string | null) => {
+    if (method === 'invite') {
+      return { email: true, password: false };
+    }
+    if (method === 'own_account') {
+      return { email: true, password: true };
+    }
+    return { email: false, password: false };
+  };
+
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -101,12 +141,40 @@ export default function PayPage() {
       return;
     }
 
+    if (order?.items?.length) {
+      for (const item of order.items) {
+        const rules = getMethodRules(item.delivery_method ?? null);
+        const input = itemInputs[item.id] ?? { email: '', password: '' };
+        if (rules.email && !input.email.trim()) {
+          setUploadError(
+            `Email wajib diisi untuk ${item.product_name_snapshot}.`
+          );
+          return;
+        }
+        if (rules.password && !input.password.trim()) {
+          setUploadError(
+            `Password wajib diisi untuk ${item.product_name_snapshot}.`
+          );
+          return;
+        }
+      }
+    }
+
     setUploading(true);
     setUploadError(null);
 
     try {
       const formData = new FormData();
       formData.append('proof', proofFile);
+      if (order?.items?.length) {
+        const payload = order.items.map((item) => ({
+          order_item_id: item.id,
+          email: itemInputs[item.id]?.email ?? '',
+          password: itemInputs[item.id]?.password ?? '',
+          note: globalNote ?? '',
+        }));
+        formData.append('item_details', JSON.stringify(payload));
+      }
 
       const response = await fetch(
         `${API_BASE}/api/orders/${orderId}/payment-proof`,
@@ -187,14 +255,19 @@ export default function PayPage() {
                     key={item.id}
                     className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3 text-sm last:border-b-0 last:pb-0"
                   >
-                    <div>
-                      <div className="font-medium text-ink">
-                        {item.product_name_snapshot}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        {item.qty} x {formatRupiah(item.unit_price)}
-                      </div>
+                  <div>
+                    <div className="font-medium text-ink">
+                      {item.product_name_snapshot}
                     </div>
+                    {item.variant_label && (
+                      <div className="text-xs text-slate-500">
+                        {item.variant_label}
+                      </div>
+                    )}
+                    <div className="text-xs text-slate-500">
+                      {item.qty} x {formatRupiah(item.unit_price)}
+                    </div>
+                  </div>
                     <div className="font-semibold text-ink">
                       {formatRupiah(item.line_total)}
                     </div>
@@ -253,6 +326,105 @@ export default function PayPage() {
             </div>
 
             <form onSubmit={handleUpload} className="mt-6 space-y-4">
+              {order.items.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-white/80 p-5">
+                  <div className="text-sm font-semibold text-ink">
+                    Data untuk tiap produk
+                  </div>
+                  <div className="mt-4 space-y-4">
+                    {order.items.map((item) => {
+                      const rules = getMethodRules(item.delivery_method ?? null);
+                      const methodLabel = resolveMethodLabel(item.delivery_method ?? null);
+                      const values = itemInputs[item.id] ?? {
+                        email: '',
+                        password: '',
+                      };
+                      return (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <div className="text-sm font-semibold text-ink">
+                                {item.product_name_snapshot}
+                              </div>
+                              {item.variant_label && (
+                                <div className="text-xs text-slate-500">
+                                  {item.variant_label}
+                                </div>
+                              )}
+                            </div>
+                            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                              {methodLabel}
+                            </span>
+                          </div>
+
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            {rules.email && (
+                              <div className="sm:col-span-1">
+                                <label className="text-xs font-semibold text-slate-500">
+                                  Email (wajib)
+                                </label>
+                                <input
+                                  value={values.email}
+                                  onChange={(event) =>
+                                    setItemInputs((prev) => ({
+                                      ...prev,
+                                      [item.id]: {
+                                        ...values,
+                                        email: event.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                                  placeholder="Email akun"
+                                />
+                              </div>
+                            )}
+                            {rules.password && (
+                              <div className="sm:col-span-1">
+                                <label className="text-xs font-semibold text-slate-500">
+                                  Password (wajib)
+                                </label>
+                                <input
+                                  value={values.password}
+                                  onChange={(event) =>
+                                    setItemInputs((prev) => ({
+                                      ...prev,
+                                      [item.id]: {
+                                        ...values,
+                                        password: event.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                                  placeholder="Password akun"
+                                  type="password"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-slate-200 bg-white/80 p-5">
+                <label className="text-sm font-semibold text-ink">
+                  Catatan untuk semua produk (opsional)
+                </label>
+                <textarea
+                  value={globalNote}
+                  onChange={(event) => setGlobalNote(event.target.value)}
+                  className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                  placeholder="Catatan tambahan untuk admin"
+                  rows={3}
+                />
+              </div>
+
               <div className="rounded-2xl border border-slate-200 bg-white/80 p-5">
                 <label
                   htmlFor="payment-proof"

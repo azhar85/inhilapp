@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import ProductCard from '@/components/ProductCard';
 import { useCart } from '@/hooks/useCart';
 import { formatRupiah } from '@/lib/formatRupiah';
-import type { Product, SiteSettings } from '@/lib/types';
+import type { Product, ProductVariant, SiteSettings } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 
@@ -36,17 +36,71 @@ export default function HomePage() {
     return products.filter((product) => product.category === activeCategory);
   }, [activeCategory, products]);
 
+  const isOutOfStock = (product: Product) => {
+    const variants = product.variants?.filter((variant) => variant.is_active !== false) ?? [];
+    if (variants.length > 0) {
+      return variants.every(
+        (variant) =>
+          typeof variant.stock === 'number' && Number(variant.stock) <= 0
+      );
+    }
+    return typeof product.stock === 'number' && product.stock <= 0;
+  };
+
   const groupedProducts = useMemo(() => {
-    const map = new Map<string, Product[]>();
-    filteredProducts.forEach((product) => {
-      const category = product.category ?? 'Lainnya';
-      if (!map.has(category)) {
-        map.set(category, []);
-      }
-      map.get(category)?.push(product);
+    const sorted = [...filteredProducts].sort((a, b) => {
+      const aOut = isOutOfStock(a) ? 1 : 0;
+      const bOut = isOutOfStock(b) ? 1 : 0;
+      if (aOut !== bOut) return aOut - bOut;
+      return a.name.localeCompare(b.name);
     });
-    return Array.from(map, ([category, items]) => ({ category, items }));
-  }, [filteredProducts]);
+
+    const popularItems = sorted.filter((product) => product.is_popular);
+
+    if (activeCategory !== 'Semua') {
+      const groups = [];
+      if (popularItems.length > 0) {
+        groups.push({
+          label: 'Paling Populer',
+          items: popularItems,
+          featured: true,
+        });
+      }
+      groups.push({
+        label: activeCategory,
+        items: sorted,
+        featured: false,
+      });
+      return groups;
+    }
+
+    const categoryOrder = Array.from(
+      new Set(
+        sorted.map((product) => product.category ?? 'Lainnya').filter(Boolean)
+      )
+    );
+
+    const categoryGroups = categoryOrder.map((label) => ({
+      label,
+      items: sorted.filter(
+        (product) => (product.category ?? 'Lainnya') === label
+      ),
+      featured: false,
+    }));
+
+    if (popularItems.length > 0) {
+      return [
+        {
+          label: 'Paling Populer',
+          items: popularItems,
+          featured: true,
+        },
+        ...categoryGroups,
+      ];
+    }
+
+    return categoryGroups;
+  }, [filteredProducts, activeCategory]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -166,8 +220,8 @@ export default function HomePage() {
     return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
   };
 
-  const getFlashPrice = (product: Product) => {
-    const original = product.price;
+  const getFlashPrice = (product: Product, basePrice: number) => {
+    const original = basePrice;
     const type = product.flash_sale_discount_type ?? null;
     const value = product.flash_sale_discount_value ?? 0;
     if (!type || value <= 0) return original;
@@ -189,6 +243,38 @@ export default function HomePage() {
     if (start && now < start) return 'waiting';
     if (end && now > end) return 'ended';
     return 'active';
+  };
+
+  const getDefaultVariant = (product: Product) => {
+    const variants = product.variants?.filter((variant) => variant.is_active !== false) ?? [];
+    return variants[0] ?? null;
+  };
+
+  const buildBaseVariant = (product: Product): ProductVariant => ({
+    id: 0,
+    label: product.duration ?? 'Durasi utama',
+    price: product.price,
+    method: product.method ?? null,
+    warranty: product.warranty ?? null,
+    stock: product.stock ?? null,
+    is_active: true,
+  });
+
+  const getFlashVariant = (product: Product) => {
+    const variants = product.variants?.filter((variant) => variant.is_active !== false) ?? [];
+    if (product.flash_sale_variant_id) {
+      return (
+        variants.find((variant) => variant.id === product.flash_sale_variant_id) ?? null
+      );
+    }
+    return null;
+  };
+
+  const getFlashStockDisplay = (product: Product, variant: ProductVariant | null) => {
+    const flashRemaining =
+      product.flash_sale_remaining ?? product.flash_sale_stock ?? null;
+    if (flashRemaining === null) return null;
+    return flashRemaining;
   };
 
   return (
@@ -256,20 +342,39 @@ export default function HomePage() {
                   
                 </div>
                 <div className="w-[126px] justify-self-end sm:w-[170px]">
-                  <ProductCard
-                    product={item.product}
-                    onAdd={(product) => addItem(product, 1, 'flash')}
-                    priceOverride={getFlashPrice(item.product)}
-                    originalPriceOverride={item.product.price}
-                    stockOverride={
-                      item.product.flash_sale_remaining ??
-                      item.product.flash_sale_stock ??
-                      null
-                    }
-                    disableAdd
-                    hideAdd
-                    compact
-                  />
+                  {(() => {
+                    const flashVariant = getFlashVariant(item.product);
+                    const variant = flashVariant ?? buildBaseVariant(item.product);
+                    const basePrice = variant?.price ?? item.product.price;
+                    const useFlashPrice = item.product.flash_sale_variant_id
+                      ? flashVariant !== null
+                      : true;
+                    const displayPrice = useFlashPrice
+                      ? getFlashPrice(item.product, basePrice)
+                      : basePrice;
+                    const stockOverride = useFlashPrice
+                      ? getFlashStockDisplay(item.product, variant)
+                      : typeof variant?.stock === 'number'
+                      ? variant.stock
+                      : typeof item.product.stock === 'number'
+                      ? item.product.stock
+                      : null;
+                    return (
+                      <ProductCard
+                        product={item.product}
+                        onAdd={(product, selected) =>
+                          addItem(product, 1, 'flash', selected ?? variant)
+                        }
+                        variantOverride={variant}
+                        priceOverride={displayPrice}
+                        originalPriceOverride={basePrice}
+                        stockOverride={stockOverride}
+                        disableAdd
+                        hideAdd
+                        compact
+                      />
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -300,18 +405,37 @@ export default function HomePage() {
                   
                 </div>
                 <div className="w-[126px] justify-self-end sm:w-[170px]">
-                  <ProductCard
-                    product={item.product}
-                    onAdd={(product) => addItem(product, 1, 'flash')}
-                    priceOverride={getFlashPrice(item.product)}
-                    originalPriceOverride={item.product.price}
-                    stockOverride={
-                      item.product.flash_sale_remaining ??
-                      item.product.flash_sale_stock ??
-                      null
-                    }
-                    compact
-                  />
+                  {(() => {
+                    const flashVariant = getFlashVariant(item.product);
+                    const variant = flashVariant ?? buildBaseVariant(item.product);
+                    const basePrice = variant?.price ?? item.product.price;
+                    const useFlashPrice = item.product.flash_sale_variant_id
+                      ? flashVariant !== null
+                      : true;
+                    const displayPrice = useFlashPrice
+                      ? getFlashPrice(item.product, basePrice)
+                      : basePrice;
+                    const stockOverride = useFlashPrice
+                      ? getFlashStockDisplay(item.product, variant)
+                      : typeof variant?.stock === 'number'
+                      ? variant.stock
+                      : typeof item.product.stock === 'number'
+                      ? item.product.stock
+                      : null;
+                    return (
+                      <ProductCard
+                        product={item.product}
+                        onAdd={(product, selected) =>
+                          addItem(product, 1, 'flash', selected ?? variant)
+                        }
+                        variantOverride={variant}
+                        priceOverride={displayPrice}
+                        originalPriceOverride={basePrice}
+                        stockOverride={stockOverride}
+                        compact
+                      />
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -367,26 +491,28 @@ export default function HomePage() {
           <p className="mt-6 text-sm text-slate-600">Produk tidak ditemukan.</p>
         )}
         {!loading && !error && filteredProducts.length > 0 && (
-          <div className="mt-6 flex flex-col gap-8">
+          <div className="mt-6 space-y-8">
             {groupedProducts.map((group) => (
-              <div key={group.category}>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                    {group.category}
-                  </span>
-                  <div className="h-px flex-1 bg-slate-200" />
-                </div>
+              <div key={`group-${group.label}`}>
+                {group.label && (
+                  group.featured ? (
+                    <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold tracking-[0.15em] text-amber-700">
+                      <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+                      {group.label}
+                    </div>
+                  ) : (
+                    <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                      {group.label}
+                    </div>
+                  )
+                )}
                 <div className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(140px,1fr))] sm:gap-5 lg:gap-6">
                   {group.items.map((product) => (
-                    (() => {
-                      return (
-                        <ProductCard
-                          key={product.id}
-                          product={product}
-                          onAdd={addItem}
-                        />
-                      );
-                    })()
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      onAdd={(item, variant) => addItem(item, 1, 'catalog', variant)}
+                    />
                   ))}
                 </div>
               </div>

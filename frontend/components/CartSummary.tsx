@@ -29,11 +29,16 @@ export default function CartSummary({
         <div className="mt-4 space-y-3">
           {items.map((item) => (
             <div
-              key={item.product_id}
+              key={`${item.product_id}-${item.variant_id ?? 'base'}`}
               className="flex items-start justify-between gap-4"
             >
               <div>
                 <div className="font-medium text-ink">{item.name}</div>
+                {item.variant_label && (
+                  <div className="text-xs font-semibold text-slate-500">
+                    {item.variant_label}
+                  </div>
+                )}
                 <div className="text-xs text-slate-500">
                   {item.qty} x {formatRupiah(item.price)}
                 </div>

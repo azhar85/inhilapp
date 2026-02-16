@@ -10,7 +10,9 @@ class ProductController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Product::query()->where('is_active', true);
+        $query = Product::query()
+            ->with('variants')
+            ->where('is_active', true);
 
         if ($search = $request->query('q')) {
             $query->where(function ($builder) use ($search) {
@@ -38,6 +40,20 @@ class ProductController extends Controller
             fn ($image) => $this->normalizeMediaUrl($image),
             $images
         )));
+
+        if ($product->relationLoaded('variants')) {
+            $product->variants = $product->variants->map(function ($variant) {
+                return [
+                    'id' => $variant->id,
+                    'label' => $variant->label,
+                    'price' => $variant->price,
+                    'method' => $variant->method,
+                    'warranty' => $variant->warranty,
+                    'stock' => $variant->stock,
+                    'is_active' => (bool) $variant->is_active,
+                ];
+            })->values();
+        }
 
         return $product;
     }

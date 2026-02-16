@@ -25,6 +25,7 @@ class OrderController extends Controller
         return DB::transaction(function () use ($data, $items, $voucherCode) {
             $productIds = collect($items)->pluck('product_id')->unique()->values();
             $products = Product::query()
+                ->with('variants')
                 ->whereIn('id', $productIds)
                 ->where('is_active', true)
                 ->get()
@@ -44,15 +45,34 @@ class OrderController extends Controller
                 $product = $products->get($item['product_id']);
                 $qty = (int) $item['qty'];
                 $flashRequested = (bool) ($item['is_flash_sale'] ?? false);
+                $variantId = $item['variant_id'] ?? null;
+                $variant = null;
+                if ($variantId) {
+                    $variant = $product->variants->firstWhere('id', (int) $variantId);
+                    if (! $variant || ! $variant->is_active) {
+                        throw ValidationException::withMessages([
+                            'items' => ['Varian produk tidak ditemukan.'],
+                        ]);
+                    }
+                }
 
-                $flashSaleAvailable = $flashRequested && $this->isFlashSaleWindow($product);
+                $flashSaleAvailable =
+                    $flashRequested &&
+                    $this->isFlashSaleWindow($product) &&
+                    $this->isFlashSaleVariantMatch($product, $variant);
 
-                $unitPrice = $this->resolveUnitPrice($product, $flashSaleAvailable);
+                $basePrice = $variant?->price ?? $product->price;
+                $unitPrice = $this->resolveUnitPrice($product, $flashSaleAvailable, $basePrice);
                 $lineTotal = $unitPrice * $qty;
 
                 $orderItemsPayload[] = [
                     'product_id' => $product->id,
+                    'product_variant_id' => $variant?->id,
                     'product_name_snapshot' => $product->name,
+                    'variant_label' => $variant?->label,
+                    'duration_snapshot' => $variant?->label ?? $product->duration,
+                    'warranty_snapshot' => $variant?->warranty ?? $product->warranty,
+                    'delivery_method' => $variant?->method ?? $product->method,
                     'unit_price' => $unitPrice,
                     'qty' => $qty,
                     'line_total' => $lineTotal,
@@ -138,18 +158,18 @@ class OrderController extends Controller
         return $price - $discount;
     }
 
-    private function resolveUnitPrice(Product $product, bool $useFlashSale): int
+    private function resolveUnitPrice(Product $product, bool $useFlashSale, int $basePrice): int
     {
         if ($useFlashSale) {
             return $this->applyDiscount(
-                $product->price,
+                $basePrice,
                 $product->flash_sale_discount_type,
                 $product->flash_sale_discount_value
             );
         }
 
         return $this->applyDiscount(
-            $product->price,
+            $basePrice,
             $product->discount_type,
             $product->discount_value
         );
@@ -174,6 +194,15 @@ class OrderController extends Controller
         }
 
         return true;
+    }
+
+    private function isFlashSaleVariantMatch(Product $product, ?\App\Models\ProductVariant $variant): bool
+    {
+        if (! $product->flash_sale_variant_id) {
+            return $variant === null;
+        }
+
+        return $variant !== null && $variant->id === $product->flash_sale_variant_id;
     }
 
     private function resolveVoucher(string $code, int $subtotal): array
