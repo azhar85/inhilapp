@@ -21,7 +21,7 @@ export default function PayPage() {
   const [showQris, setShowQris] = useState(false);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [itemInputs, setItemInputs] = useState<
-    Record<number, { email: string; password: string }>
+    Record<number, { email: string; password: string; phone: string }>
   >({});
   const [globalNote, setGlobalNote] = useState('');
 
@@ -59,7 +59,7 @@ export default function PayPage() {
         const data = (await response.json()) as Order;
         setOrder(data);
         setItemInputs((prev) => {
-          const next: Record<number, { email: string; password: string }> = {
+          const next: Record<number, { email: string; password: string; phone: string }> = {
             ...prev,
           };
           data.items?.forEach((item) => {
@@ -67,6 +67,7 @@ export default function PayPage() {
               next[item.id] = {
                 email: item.customer_email ?? '',
                 password: item.customer_password ?? '',
+                phone: item.customer_phone ?? '',
               };
             }
           });
@@ -126,12 +127,15 @@ export default function PayPage() {
 
   const getMethodRules = (method?: string | null) => {
     if (method === 'invite') {
-      return { email: true, password: false };
+      return { email: true, password: false, phone: false };
     }
     if (method === 'own_account') {
-      return { email: true, password: true };
+      return { email: true, password: true, phone: false };
     }
-    return { email: false, password: false };
+    if (method === 'phone') {
+      return { email: false, password: false, phone: true };
+    }
+    return { email: false, password: false, phone: false };
   };
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -145,7 +149,7 @@ export default function PayPage() {
     if (order?.items?.length) {
       for (const item of order.items) {
         const rules = getMethodRules(item.delivery_method ?? null);
-        const input = itemInputs[item.id] ?? { email: '', password: '' };
+        const input = itemInputs[item.id] ?? { email: '', password: '', phone: '' };
         if (rules.email && !input.email.trim()) {
           setUploadError(
             `Email wajib diisi untuk ${item.product_name_snapshot}.`
@@ -155,6 +159,12 @@ export default function PayPage() {
         if (rules.password && !input.password.trim()) {
           setUploadError(
             `Password wajib diisi untuk ${item.product_name_snapshot}.`
+          );
+          return;
+        }
+        if (rules.phone && !input.phone.trim()) {
+          setUploadError(
+            `Nomor HP wajib diisi untuk ${item.product_name_snapshot}.`
           );
           return;
         }
@@ -172,6 +182,7 @@ export default function PayPage() {
           order_item_id: item.id,
           email: itemInputs[item.id]?.email ?? '',
           password: itemInputs[item.id]?.password ?? '',
+          phone: itemInputs[item.id]?.phone ?? '',
           note: globalNote ?? '',
         }));
         formData.append('item_details', JSON.stringify(payload));
@@ -339,6 +350,7 @@ export default function PayPage() {
                       const values = itemInputs[item.id] ?? {
                         email: '',
                         password: '',
+                        phone: '',
                       };
                       return (
                         <div
@@ -402,6 +414,27 @@ export default function PayPage() {
                                   className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-brand focus:outline-none"
                                   placeholder="Password akun"
                                   type="password"
+                                />
+                              </div>
+                            )}
+                            {rules.phone && (
+                              <div className="sm:col-span-1">
+                                <label className="text-xs font-semibold text-slate-500">
+                                  Nomor HP (wajib)
+                                </label>
+                                <input
+                                  value={values.phone}
+                                  onChange={(event) =>
+                                    setItemInputs((prev) => ({
+                                      ...prev,
+                                      [item.id]: {
+                                        ...values,
+                                        phone: event.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                                  placeholder="Nomor HP"
                                 />
                               </div>
                             )}

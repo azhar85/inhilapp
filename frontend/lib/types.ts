@@ -60,6 +60,7 @@ export type OrderItem = {
   delivery_method?: string | null;
   customer_email?: string | null;
   customer_password?: string | null;
+  customer_phone?: string | null;
   customer_note?: string | null;
   unit_price: number;
   qty: number;
@@ -80,7 +81,6 @@ export type Order = {
   fulfillment_email?: string | null;
   fulfillment_password?: string | null;
   fulfillment_link?: string | null;
-  fulfillment_phone?: string | null;
   fulfillment_notes?: string | null;
   payment_proof_url?: string | null;
   payment_proof_uploaded_at?: string | null;

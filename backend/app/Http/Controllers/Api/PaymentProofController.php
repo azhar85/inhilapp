@@ -185,6 +185,9 @@ class PaymentProofController extends Controller
             if ($item->customer_password) {
                 $lines[] = '  Password user: ' . $item->customer_password;
             }
+            if ($item->customer_phone) {
+                $lines[] = '  Nomor HP user: ' . $item->customer_phone;
+            }
             if ($item->customer_note) {
                 $lines[] = '  Catatan user: ' . $item->customer_note;
             }
@@ -207,33 +210,26 @@ class PaymentProofController extends Controller
     private function buildCustomerMessage(Order $order): string
     {
         $lines = [];
-        $lines[] = 'Terima kasih! Bukti pembayaran kamu sudah kami terima.';
-        $lines[] = 'Pesanan akan segera diproses.';
+        $lines[] = 'Halo ' . $order->customer_name . '👋🏻';
+        $lines[] = 'Bukti pembayaran kamu sudah kami terima!';
         $lines[] = '';
         $lines[] = 'ID Order: ' . $order->order_code;
-        $lines[] = 'Nama: ' . $order->customer_name;
-        $lines[] = '';
-        $lines[] = 'Detail Pesanan:';
 
         foreach ($order->items as $item) {
-            $lines[] = '- ' . $item->product_name_snapshot
+            $lines[] = $item->product_name_snapshot
                 . ($item->duration_snapshot ? ' (' . $item->duration_snapshot . ')' : '')
                 . ' [' . $this->methodLabel($item->delivery_method) . ']'
                 . ' x' . $item->qty
                 . ' = Rp' . number_format($item->line_total, 0, ',', '.');
         }
 
-        $subtotal = $order->items->sum('line_total');
         $voucherDiscount = (int) ($order->voucher_discount ?? 0);
-
-        $lines[] = '';
-        $lines[] = 'Subtotal: Rp' . number_format($subtotal, 0, ',', '.');
         if ($voucherDiscount > 0) {
-            $lines[] = 'Voucher (' . ($order->voucher_code ?? '-') . '): -Rp' . number_format($voucherDiscount, 0, ',', '.');
+            $lines[] = 'Diskon/Voucher: Rp ' . number_format($voucherDiscount, 0, ',', '.');
         }
         $lines[] = 'Total: Rp' . number_format($order->total_amount, 0, ',', '.');
-        $lines[] = 'Status: menunggu konfirmasi admin.';
-        $lines[] = 'Simpan ID order ini untuk cek status: ' . ($order->order_code ?? $order->id);
+        $lines[] = '';
+        $lines[] = 'Simpan ID order untuk cek status pesanan!';
 
         return implode("\n", $lines);
     }
@@ -440,6 +436,7 @@ class PaymentProofController extends Controller
             $map[(int) $orderItemId] = [
                 'email' => isset($entry['email']) ? trim((string) $entry['email']) : null,
                 'password' => isset($entry['password']) ? trim((string) $entry['password']) : null,
+                'phone' => isset($entry['phone']) ? trim((string) $entry['phone']) : null,
                 'note' => isset($entry['note']) ? trim((string) $entry['note']) : null,
             ];
         }
@@ -454,6 +451,7 @@ class PaymentProofController extends Controller
             $detail = $inputs[$item->id] ?? [];
             $email = $detail['email'] ?? null;
             $password = $detail['password'] ?? null;
+            $phone = $detail['phone'] ?? null;
             $note = $detail['note'] ?? null;
 
             if ($method === 'invite' && ! $email) {
@@ -470,8 +468,15 @@ class PaymentProofController extends Controller
                 }
             }
 
+            if ($method === 'phone' && ! $phone) {
+                throw ValidationException::withMessages([
+                    'items' => ['Nomor HP wajib diisi untuk metode nomor hp.'],
+                ]);
+            }
+
             $item->customer_email = $email ?: null;
             $item->customer_password = $password ?: null;
+            $item->customer_phone = $phone ?: null;
             $item->customer_note = $note ?: null;
             $item->save();
         }

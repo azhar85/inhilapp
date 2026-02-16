@@ -20,6 +20,7 @@ class OrderItem extends Model
         'delivery_method',
         'customer_email',
         'customer_password',
+        'customer_phone',
         'customer_note',
         'unit_price',
         'qty',

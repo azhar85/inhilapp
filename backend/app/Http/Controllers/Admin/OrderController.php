@@ -56,7 +56,6 @@ class OrderController extends Controller
             'fulfillment_email' => ['nullable', 'string'],
             'fulfillment_password' => ['nullable', 'string'],
             'fulfillment_link' => ['nullable', 'string'],
-            'fulfillment_phone' => ['nullable', 'string'],
             'fulfillment_notes' => ['nullable', 'string'],
         ]);
 
@@ -86,7 +85,6 @@ class OrderController extends Controller
         $email = trim((string) ($data['fulfillment_email'] ?? ''));
         $password = trim((string) ($data['fulfillment_password'] ?? ''));
         $link = trim((string) ($data['fulfillment_link'] ?? ''));
-        $phone = trim((string) ($data['fulfillment_phone'] ?? ''));
 
         if (in_array('admin_account', $methods, true)) {
             if ($email === '') {
@@ -100,10 +98,6 @@ class OrderController extends Controller
         if (in_array('link', $methods, true) && $link === '') {
             $errors['fulfillment_link'][] = 'Link wajib diisi untuk metode link.';
         }
-        if (in_array('phone', $methods, true) && $phone === '') {
-            $errors['fulfillment_phone'][] = 'Nomor HP wajib diisi untuk metode nomor hp.';
-        }
-
         if (!empty($errors)) {
             throw ValidationException::withMessages($errors);
         }
@@ -177,74 +171,68 @@ class OrderController extends Controller
 
     private function buildCustomerStatusMessage(Order $order, string $status): string
     {
-        $methods = $this->orderMethods($order);
         $lines = [];
-        $lines[] = 'Update status pesanan InhilApp.';
-        $lines[] = '';
-        $lines[] = 'ID Order: ' . ($order->order_code ?? $order->id);
-        $lines[] = 'Nama: ' . $order->customer_name;
-        $lines[] = 'Status: ' . $this->humanStatus($status);
-
+        $lines[] = 'Halo ' . $order->customer_name . '👋🏻';
         if ($status === 'PAID') {
-            $lines[] = '';
-            $lines[] = 'Pembayaran sudah kami terima. Pesanan sedang diproses.';
-            $lines[] = '';
-            $lines[] = $this->buildItemsSummary($order);
+            $lines[] = 'Pembayaranmu sudah dikonfirmasi! pesananmu akan segera diproses!';
         } elseif ($status === 'DELIVERED') {
+            $lines[] = 'Pesanan sudah selesai! berikut detail pesananmu';
             $lines[] = '';
-            $lines[] = 'Pesanan sudah selesai. Berikut detail akun/link premium:';
-            if (in_array('admin_account', $methods, true)) {
-                $lines[] = 'Email: ' . $this->valueOrDash($order->fulfillment_email);
-                $lines[] = 'Password: ' . $this->valueOrDash($order->fulfillment_password);
-            }
-            if (in_array('link', $methods, true)) {
-                $lines[] = 'Link: ' . $this->valueOrDash($order->fulfillment_link);
-            }
-            if (in_array('phone', $methods, true)) {
-                $lines[] = 'Nomor HP: ' . $this->valueOrDash($order->fulfillment_phone);
+            $lines[] = 'ID Order: ' . ($order->order_code ?? $order->id);
+            foreach ($order->items as $item) {
+                $lines[] = $item->product_name_snapshot
+                    . ($item->duration_snapshot ? ' (' . $item->duration_snapshot . ')' : '')
+                    . ' [' . $this->methodLabel($item->delivery_method) . ']'
+                    . ' x' . $item->qty;
+                foreach ($this->buildDeliveredItemLines($order, $item) as $itemLine) {
+                    $lines[] = $itemLine;
+                }
+                $lines[] = '';
             }
             if ($order->fulfillment_notes) {
-                $lines[] = 'Catatan: ' . $order->fulfillment_notes;
+                $lines[] = 'Catatan admin :';
+                $lines[] = $order->fulfillment_notes;
+                $lines[] = '';
             }
-            $lines[] = '';
-            $lines[] = $this->buildItemsSummary($order);
+            $lines[] = 'Terimakasih telah order!';
         } elseif ($status === 'INVALID_PAYMENT') {
-            $lines[] = '';
-            $lines[] = 'Pembayaran tidak sah. Silakan hubungi admin jika perlu bantuan.';
+            $lines[] = 'Pembayaran tidak valid. Silakan cek kembali bukti pembayaran kamu.';
         } elseif ($status === 'REFUND') {
-            $lines[] = '';
-            $lines[] = 'Maaf, produk sedang habis. Kami akan memproses refund.';
+            $lines[] = 'Produk sedang habis. Refund akan segera diproses.';
         }
 
         return implode("\n", array_filter($lines, fn ($line) => $line !== null));
     }
 
-    private function buildItemsSummary(Order $order): string
+    private function buildDeliveredItemLines(Order $order, $item): array
     {
         $lines = [];
-        $lines[] = 'Detail pesanan:';
-        foreach ($order->items as $item) {
-            $lines[] = '- ' . $item->product_name_snapshot
-                . ($item->duration_snapshot ? ' (' . $item->duration_snapshot . ')' : '')
-                . ' (' . $this->methodLabel($item->delivery_method) . ')'
-                . ' x' . $item->qty
-                . ' = Rp' . number_format($item->line_total, 0, ',', '.');
+        $method = $item->delivery_method ?? 'admin_account';
+
+        if ($method === 'invite') {
+            $lines[] = 'Email ' . $this->valueOrDash($item->customer_email) . ' berhasil di invite!';
+            return $lines;
         }
-        $lines[] = 'Total: Rp' . number_format($order->total_amount, 0, ',', '.');
-        return implode("\n", $lines);
-    }
 
-    private function humanStatus(string $status): string
-    {
-        $map = [
-            'PENDING_PAYMENT' => 'pending',
-            'PAID' => 'paid',
-            'DELIVERED' => 'delivered',
-            'INVALID_PAYMENT' => 'invalid',
-            'REFUND' => 'refund',
-        ];
+        if ($method === 'own_account') {
+            $lines[] = 'Email ' . $this->valueOrDash($item->customer_email) . ' berhasil di proses!';
+            return $lines;
+        }
 
-        return $map[$status] ?? strtolower(str_replace('_', ' ', $status));
+        if ($method === 'link') {
+            $lines[] = 'Link: ' . $this->valueOrDash($order->fulfillment_link);
+            return $lines;
+        }
+
+        if ($method === 'phone') {
+            $lines[] = 'Nomor HP: ' . $this->valueOrDash($item->customer_phone);
+            return $lines;
+        }
+
+        $lines[] = 'Email: ' . $this->valueOrDash($order->fulfillment_email);
+        $lines[] = 'Password: ' . $this->valueOrDash($order->fulfillment_password);
+
+        return $lines;
     }
 
     private function valueOrDash(?string $value): string
