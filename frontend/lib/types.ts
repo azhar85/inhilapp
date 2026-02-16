@@ -80,6 +80,7 @@ export type Order = {
   fulfillment_email?: string | null;
   fulfillment_password?: string | null;
   fulfillment_link?: string | null;
+  fulfillment_phone?: string | null;
   fulfillment_notes?: string | null;
   payment_proof_url?: string | null;
   payment_proof_uploaded_at?: string | null;

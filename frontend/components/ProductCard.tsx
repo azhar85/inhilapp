@@ -23,6 +23,7 @@ const METHOD_LABELS: Record<string, string> = {
   admin_account: 'Akun Admin',
   own_account: 'Akun Kamu',
   link: 'Link',
+  phone: 'Nomor HP',
 };
 
 function applyDiscount(

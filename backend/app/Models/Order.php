@@ -26,6 +26,7 @@ class Order extends Model
         'fulfillment_email',
         'fulfillment_password',
         'fulfillment_link',
+        'fulfillment_phone',
         'fulfillment_notes',
         'voucher_code',
         'voucher_discount',

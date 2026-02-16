@@ -14,6 +14,7 @@ const METHOD_OPTIONS = [
   { value: 'admin_account', label: 'Akun Admin' },
   { value: 'own_account', label: 'Akun Kamu' },
   { value: 'link', label: 'Link' },
+  { value: 'phone', label: 'Nomor HP' },
 ];
 
 const METHOD_LABELS: Record<string, string> = {
@@ -21,6 +22,7 @@ const METHOD_LABELS: Record<string, string> = {
   admin_account: 'Akun Admin',
   own_account: 'Akun Kamu',
   link: 'Link',
+  phone: 'Nomor HP',
 };
 
 const getMethodLabel = (method?: string | null) =>
@@ -227,6 +229,7 @@ export default function AdminPage() {
   const [showFlashModal, setShowFlashModal] = useState(false);
   const [flashDetail, setFlashDetail] = useState<Product | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showOrderSummary, setShowOrderSummary] = useState(false);
 
   const orderFilters = useMemo(() => {
     const params = new URLSearchParams();
@@ -256,6 +259,13 @@ export default function AdminPage() {
   const requiresFulfillmentEmail = orderModalMethods.includes('admin_account');
   const requiresFulfillmentPassword = orderModalMethods.includes('admin_account');
   const requiresFulfillmentLink = orderModalMethods.includes('link');
+  const requiresFulfillmentPhone = orderModalMethods.includes('phone');
+  const orderModalCustomerNote = useMemo(() => {
+    const firstNote = (orderModal?.items ?? [])
+      .map((item) => item.customer_note?.trim())
+      .find((note) => Boolean(note));
+    return firstNote ?? '';
+  }, [orderModal]);
 
   const flashSaleProducts = useMemo(
     () =>
@@ -372,6 +382,12 @@ export default function AdminPage() {
     const timer = setTimeout(() => setSuccessMessage(null), 2200);
     return () => clearTimeout(timer);
   }, [successMessage]);
+
+  useEffect(() => {
+    if (orderModal) {
+      setShowOrderSummary(false);
+    }
+  }, [orderModal]);
 
   const adminFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
@@ -649,12 +665,8 @@ export default function AdminPage() {
     setActionLoading('Menghapus produk...');
     setError(null);
     try {
-      const deletePayload = new FormData();
-      deletePayload.append('_method', 'DELETE');
-
       const response = await adminFetch(`${API_BASE}/api/admin/products/${productId}`, {
-        method: 'POST',
-        body: deletePayload,
+        method: 'DELETE',
       });
 
       if (!response.ok) {
@@ -664,12 +676,10 @@ export default function AdminPage() {
 
       const payload = await response.json();
       if (payload?.action === 'deactivated') {
-        setProducts((prev) =>
-          prev.map((item) =>
-            item.id === productId ? { ...item, is_active: false } : item
-          )
-        );
-        setSuccessMessage(payload.message ?? 'Produk dinonaktifkan.');
+        // Jika produk pernah dipakai order, backend hanya bisa nonaktifkan.
+        // Dari sisi UI tetap kita keluarkan dari list agar terasa seperti "hapus".
+        setProducts((prev) => prev.filter((item) => item.id !== productId));
+        setSuccessMessage(payload.message ?? 'Produk dinonaktifkan dan disembunyikan dari list.');
       } else {
         setProducts((prev) => prev.filter((item) => item.id !== productId));
         setSuccessMessage(payload?.message ?? 'Produk dihapus.');
@@ -934,6 +944,7 @@ export default function AdminPage() {
           ? order.fulfillment_password ?? null
           : null,
         fulfillment_link: methods.has('link') ? order.fulfillment_link ?? null : null,
+        fulfillment_phone: methods.has('phone') ? order.fulfillment_phone ?? null : null,
         fulfillment_notes: order.fulfillment_notes ?? null,
       };
       const response = await adminFetch(`${API_BASE}/api/admin/orders/${order.id}`, {
@@ -948,6 +959,7 @@ export default function AdminPage() {
           data?.errors?.fulfillment_email?.[0] ??
           data?.errors?.fulfillment_password?.[0] ??
           data?.errors?.fulfillment_link?.[0] ??
+          data?.errors?.fulfillment_phone?.[0] ??
           data?.message ??
           'Gagal memperbarui order.';
         setError(message);
@@ -2142,205 +2154,153 @@ export default function AdminPage() {
                           <div className="mt-2 text-xl font-semibold text-ink">
                             {orderModal.order_code ?? 'Belum ada ID'}
                           </div>
-                      </div>
-                      </div>
-                    </div>
-
-                    <div className="px-5 py-4 text-sm">
-                      <div className="text-xs uppercase tracking-wide text-slate-400">
-                        Ringkasan Pesanan
-                      </div>
-                      <div className="mt-3 divide-y divide-slate-100 text-slate-600">
-                        {orderModal.items?.map((item) => (
-                          <div
-                            key={item.id}
-                            className="flex items-start justify-between gap-3 py-2 text-sm"
-                          >
-                            <div>
-                              <div className="font-semibold text-ink">
-                                {item.product_name_snapshot} x{item.qty}
-                              </div>
-                              <div className="mt-0.5 text-xs text-slate-500">
-                                Metode: {getMethodLabel(item.delivery_method)}
-                              </div>
-                              {(item.customer_email ||
-                                item.customer_password ||
-                                item.customer_note) && (
-                                <div className="mt-1 space-y-0.5 text-xs text-slate-500">
-                                  {item.customer_email && (
-                                    <div>Email user: {item.customer_email}</div>
-                                  )}
-                                  {item.customer_password && (
-                                    <div>Password user: {item.customer_password}</div>
-                                  )}
-                                  {item.customer_note && (
-                                    <div className="break-words">
-                                      Catatan user: {item.customer_note}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                            <span className="font-semibold text-ink">
-                              {formatRupiah(item.line_total)}
-                            </span>
-                          </div>
-                        ))}
-                        <div className="flex items-center justify-between pt-3 font-semibold text-ink">
-                          <span>Total</span>
-                          <span>{formatRupiah(orderModal.total_amount)}</span>
                         </div>
-                      </div>
-                    </div>
-
-                    <div className="px-5 py-4 text-sm">
-                      <div className="text-xs uppercase tracking-wide text-slate-400">
-                        Data Pelanggan & Pembayaran
-                      </div>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        {[
-                          ['Nama', displayValue(orderModal.customer_name)],
-                          ['WhatsApp', displayValue(orderModal.customer_whatsapp)],
-                          ['Voucher', displayValue(orderModal.voucher_code)],
-                          [
-                            'Diskon',
-                            orderModal.voucher_discount
-                              ? formatRupiah(orderModal.voucher_discount)
-                              : '-',
-                          ],
-                          [
-                            'Waktu',
-                            formatDateTime(orderModal.payment_proof_uploaded_at),
-                          ],
-                          ].map(([label, value]) => (
-                          <div
-                            key={label}
-                            className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
-                          >
-                            <div className="text-[11px] uppercase text-slate-400">
-                              {label}
-                            </div>
-                            <div className="mt-1 text-sm font-semibold text-ink">
-                              {value}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="px-5 py-4 text-sm">
-                      <div className="text-xs uppercase tracking-wide text-slate-400">
-                        Output Admin
-                      </div>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        {requiresFulfillmentEmail && (
-                          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                            <div className="text-[11px] uppercase text-slate-400">Email</div>
-                            <div className="mt-1 text-sm font-semibold text-ink">
-                              {displayValue(orderModal.fulfillment_email)}
-                            </div>
-                          </div>
-                        )}
-                        {requiresFulfillmentPassword && (
-                          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                            <div className="text-[11px] uppercase text-slate-400">Password</div>
-                            <div className="mt-1 text-sm font-semibold text-ink">
-                              {displayValue(orderModal.fulfillment_password)}
-                            </div>
-                          </div>
-                        )}
-                        {requiresFulfillmentLink && (
-                          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 sm:col-span-2">
-                            <div className="text-[11px] uppercase text-slate-400">Link</div>
-                            <div className="mt-1 break-all text-sm font-semibold text-ink">
-                              {displayValue(orderModal.fulfillment_link)}
-                            </div>
-                          </div>
-                        )}
-                        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 sm:col-span-2">
-                          <div className="text-[11px] uppercase text-slate-400">
-                            Catatan
-                          </div>
-                          <div className="mt-1 break-words text-sm font-semibold text-ink">
-                            {displayValue(orderModal.fulfillment_notes)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="px-5 py-4 text-sm">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">
-                        Bukti Pembayaran
-                      </div>
-                      {orderModal.payment_proof_url ? (
                         <button
                           type="button"
-                          onClick={() => setPreviewImage(orderModal.payment_proof_url ?? null)}
-                          className="mt-3 w-full"
+                          onClick={() => setShowOrderSummary((prev) => !prev)}
+                          className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600"
                         >
-                          <img
-                            src={orderModal.payment_proof_url}
-                            alt="Bukti pembayaran"
-                            className="aspect-video w-full rounded-2xl object-cover shadow-sm transition hover:opacity-90"
-                          />
+                          {showOrderSummary ? 'Tutup Detail' : 'Buka Detail'}
                         </button>
-                      ) : (
-                        <div className="mt-3 text-xs text-slate-500">
-                          Belum ada bukti pembayaran.
-                        </div>
-                      )}
+                      </div>
                     </div>
+
+                    {showOrderSummary && (
+                      <>
+                        <div className="px-5 py-4 text-sm">
+                          <div className="text-xs uppercase tracking-wide text-slate-400">
+                            Ringkasan Pesanan
+                          </div>
+                          <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
+                            <div className="divide-y divide-slate-200 pb-3 text-slate-600">
+                              <div className="flex items-center justify-between gap-3 py-2 text-sm">
+                                <span className="text-[11px] uppercase text-slate-400">Nama</span>
+                                <span className="font-semibold text-ink">
+                                  {displayValue(orderModal.customer_name)}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3 py-2 text-sm">
+                                <span className="text-[11px] uppercase text-slate-400">WhatsApp</span>
+                                <span className="font-semibold text-ink">
+                                  {displayValue(orderModal.customer_whatsapp)}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3 py-2 text-sm">
+                                <span className="text-[11px] uppercase text-slate-400">Tanggal</span>
+                                <span className="font-semibold text-ink">
+                                  {formatDateTime(orderModal.payment_proof_uploaded_at)}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="mb-3 border-t border-slate-200" />
+
+                            <div className="divide-y divide-slate-200 text-slate-600">
+                              {orderModal.items?.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className="flex items-start justify-between gap-3 py-2 text-sm"
+                                >
+                                  <div>
+                                    <div className="font-semibold text-ink">
+                                      {item.product_name_snapshot} x{item.qty}
+                                    </div>
+                                    <div className="mt-0.5 text-xs text-slate-500">
+                                      Metode: {getMethodLabel(item.delivery_method)}
+                                    </div>
+                                  </div>
+                                  <span className="font-semibold text-ink">
+                                    {formatRupiah(item.line_total)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-base font-semibold text-ink">
+                              <span className="text-sm font-medium text-slate-500">
+                                Voucher: {displayValue(orderModal.voucher_code)}
+                              </span>
+                              <span className="text-sm font-medium text-emerald-700">
+                                {orderModal.voucher_discount
+                                  ? `-${formatRupiah(orderModal.voucher_discount)}`
+                                  : '-'}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-3 text-base font-semibold text-ink">
+                              <span>Total</span>
+                              <span>{formatRupiah(orderModal.total_amount)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="px-5 py-4 text-sm">
+                          <div className="text-xs uppercase tracking-wide text-slate-500">
+                            Bukti Pembayaran
+                          </div>
+                          {orderModal.payment_proof_url ? (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewImage(orderModal.payment_proof_url ?? null)}
+                              className="mt-3 w-full"
+                            >
+                              <img
+                                src={orderModal.payment_proof_url}
+                                alt="Bukti pembayaran"
+                                className="aspect-video w-full rounded-2xl object-cover shadow-sm transition hover:opacity-90"
+                              />
+                            </button>
+                          ) : (
+                            <div className="mt-3 text-xs text-slate-500">
+                              Belum ada bukti pembayaran.
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
               <div className="w-full space-y-4">
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-5 py-4 shadow-sm">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                    Status Order
+                  </div>
+                  <select
+                    value={orderModal.status}
+                    onChange={(event) =>
+                      setOrderModal((prev) =>
+                        prev ? { ...prev, status: event.target.value } : prev
+                      )
+                    }
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  >
+                    {orderStatusOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {formatOrderStatus(status)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 shadow-sm">
                   <div className="px-5 py-4 text-sm">
                     <div className="text-xs uppercase tracking-wide text-slate-400">
                       Pengolahan Order
                     </div>
-                    <p className="mt-2 text-sm text-slate-500">
-                      Lengkapi status dan kirim akun/link setelah pembayaran valid.
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {orderModalMethods.map((method) => (
-                        <span
-                          key={method}
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600"
-                        >
-                          {getMethodLabel(method)}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="mt-5 space-y-4">
-                      <div>
-                        <div className="text-[11px] uppercase text-slate-400">
-                          Status Order
-                        </div>
-                        <select
-                          value={orderModal.status}
-                          onChange={(event) =>
-                            setOrderModal((prev) =>
-                              prev ? { ...prev, status: event.target.value } : prev
-                            )
-                          }
-                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                        >
-                          {orderStatusOptions.map((status) => (
-                            <option key={status} value={status}>
-                              {formatOrderStatus(status)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <div className="text-[11px] uppercase text-slate-400">
-                          Detail Pengiriman
-                        </div>
-                        <div className="mt-2 grid gap-3">
-                          {requiresFulfillmentEmail && (
+                    
+                   
+                    <div className="mt-5 space-y-3">
+                      {orderModalMethods.includes('admin_account') && (
+                        <div>
+                          <div className="text-xs font-semibold text-slate-700">
+                            {(orderModal.items ?? [])
+                              .filter((item) => item.delivery_method === 'admin_account')
+                              .map((item) => `${item.product_name_snapshot} x${item.qty}`)
+                              .join(', ') || '-'}
+                          </div>
+                          <div className="mt-0.5 text-[11px] font-semibold uppercase text-slate-400">
+                            Akun Admin
+                          </div>
+                          <div className="mt-2 grid gap-3">
                             <input
                               value={orderModal.fulfillment_email ?? ''}
                               onChange={(event) =>
@@ -2356,8 +2316,6 @@ export default function AdminPage() {
                               placeholder="Email akun premium"
                               className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
                             />
-                          )}
-                          {requiresFulfillmentPassword && (
                             <input
                               value={orderModal.fulfillment_password ?? ''}
                               onChange={(event) =>
@@ -2373,8 +2331,100 @@ export default function AdminPage() {
                               placeholder="Password akun premium"
                               className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
                             />
-                          )}
-                          {requiresFulfillmentLink && (
+                          </div>
+                        </div>
+                      )}
+                      {orderModalMethods.includes('own_account') && (
+                        <div>
+                          <div className="text-xs font-semibold text-slate-700">
+                            {(orderModal.items ?? [])
+                              .filter((item) => item.delivery_method === 'own_account')
+                              .map((item) => `${item.product_name_snapshot} x${item.qty}`)
+                              .join(', ') || '-'}
+                          </div>
+                          <div className="mt-0.5 text-[11px] font-semibold uppercase text-slate-400">
+                            Akun Kamu
+                          </div>
+                          <div className="mt-2 space-y-3">
+                            {(orderModal.items ?? [])
+                              .filter((item) => item.delivery_method === 'own_account')
+                              .map((item) => (
+                                <div
+                                  key={`user-own-account-${item.id}`}
+                                  className="space-y-2"
+                                >
+                                  <div className="grid gap-2">
+                                    <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                                      Email user
+                                    </div>
+                                    <input
+                                      readOnly
+                                      value={item.customer_email ?? ''}
+                                      placeholder="Email user belum diisi"
+                                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                                    />
+                                    <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                                      Password user
+                                    </div>
+                                    <input
+                                      readOnly
+                                      value={item.customer_password ?? ''}
+                                      placeholder="Password user belum diisi"
+                                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                      {orderModalMethods.includes('invite') && (
+                        <div>
+                          <div className="text-xs font-semibold text-slate-700">
+                            {(orderModal.items ?? [])
+                              .filter((item) => item.delivery_method === 'invite')
+                              .map((item) => `${item.product_name_snapshot} x${item.qty}`)
+                              .join(', ') || '-'}
+                          </div>
+                          <div className="mt-0.5 text-[11px] font-semibold uppercase text-slate-400">
+                            Invite
+                          </div>
+                          <div className="mt-2 space-y-3">
+                            {(orderModal.items ?? [])
+                              .filter((item) => item.delivery_method === 'invite')
+                              .map((item) => (
+                                <div
+                                  key={`user-invite-${item.id}`}
+                                  className="space-y-2"
+                                >
+                                  <div className="grid gap-2">
+                                    <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                                      Email user
+                                    </div>
+                                    <input
+                                      readOnly
+                                      value={item.customer_email ?? ''}
+                                      placeholder="Email user belum diisi"
+                                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                      {orderModalMethods.includes('link') && (
+                        <div>
+                          <div className="text-xs font-semibold text-slate-700">
+                            {(orderModal.items ?? [])
+                              .filter((item) => item.delivery_method === 'link')
+                              .map((item) => `${item.product_name_snapshot} x${item.qty}`)
+                              .join(', ') || '-'}
+                          </div>
+                          <div className="mt-0.5 text-[11px] font-semibold uppercase text-slate-400">
+                            Link
+                          </div>
+                          <div className="mt-2">
                             <input
                               value={orderModal.fulfillment_link ?? ''}
                               onChange={(event) =>
@@ -2387,32 +2437,65 @@ export default function AdminPage() {
                               placeholder="Link / invite"
                               className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
                             />
-                          )}
-                          <textarea
-                            value={orderModal.fulfillment_notes ?? ''}
-                            onChange={(event) =>
-                              setOrderModal((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      fulfillment_notes: event.target.value,
-                                    }
-                                  : prev
-                              )
-                            }
-                            placeholder="Catatan admin (bisa enter)"
-                            className="min-h-[110px] w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                          />
-                          {!requiresFulfillmentEmail &&
-                            !requiresFulfillmentPassword &&
-                            !requiresFulfillmentLink && (
-                              <p className="text-xs text-slate-500">
-                                Metode order ini tidak membutuhkan kirim akun/email/link.
-                                Isi catatan jika diperlukan.
-                              </p>
-                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
+                      {orderModalMethods.includes('phone') && (
+                        <div>
+                          <div className="text-xs font-semibold text-slate-700">
+                            {(orderModal.items ?? [])
+                              .filter((item) => item.delivery_method === 'phone')
+                              .map((item) => `${item.product_name_snapshot} x${item.qty}`)
+                              .join(', ') || '-'}
+                          </div>
+                          <div className="mt-0.5 text-[11px] font-semibold uppercase text-slate-400">
+                            Nomor HP
+                          </div>
+                          <div className="mt-2">
+                            <input
+                              value={orderModal.fulfillment_phone ?? ''}
+                              onChange={(event) =>
+                                setOrderModal((prev) =>
+                                  prev
+                                    ? { ...prev, fulfillment_phone: event.target.value }
+                                    : prev
+                                )
+                              }
+                              placeholder="Nomor HP premium"
+                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                            />
+                          </div>
+                        </div>
+                      )}
+                      <textarea
+                        readOnly
+                        value={displayValue(orderModalCustomerNote)}
+                        placeholder="Catatan user"
+                        className="min-h-[84px] w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700"
+                      />
+                      <textarea
+                        value={orderModal.fulfillment_notes ?? ''}
+                        onChange={(event) =>
+                          setOrderModal((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  fulfillment_notes: event.target.value,
+                                }
+                              : prev
+                          )
+                        }
+                        placeholder="Catatan admin (bisa enter)"
+                        className="min-h-[110px] w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                      />
+                      {!requiresFulfillmentEmail &&
+                        !requiresFulfillmentPassword &&
+                        !requiresFulfillmentLink &&
+                        !requiresFulfillmentPhone && (
+                          <p className="text-xs text-slate-500">
+                            Order ini cukup diproses lewat catatan admin.
+                          </p>
+                        )}
                     </div>
                   </div>
                 </div>

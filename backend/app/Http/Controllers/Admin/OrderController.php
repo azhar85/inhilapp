@@ -56,6 +56,7 @@ class OrderController extends Controller
             'fulfillment_email' => ['nullable', 'string'],
             'fulfillment_password' => ['nullable', 'string'],
             'fulfillment_link' => ['nullable', 'string'],
+            'fulfillment_phone' => ['nullable', 'string'],
             'fulfillment_notes' => ['nullable', 'string'],
         ]);
 
@@ -85,6 +86,7 @@ class OrderController extends Controller
         $email = trim((string) ($data['fulfillment_email'] ?? ''));
         $password = trim((string) ($data['fulfillment_password'] ?? ''));
         $link = trim((string) ($data['fulfillment_link'] ?? ''));
+        $phone = trim((string) ($data['fulfillment_phone'] ?? ''));
 
         if (in_array('admin_account', $methods, true)) {
             if ($email === '') {
@@ -97,6 +99,9 @@ class OrderController extends Controller
 
         if (in_array('link', $methods, true) && $link === '') {
             $errors['fulfillment_link'][] = 'Link wajib diisi untuk metode link.';
+        }
+        if (in_array('phone', $methods, true) && $phone === '') {
+            $errors['fulfillment_phone'][] = 'Nomor HP wajib diisi untuk metode nomor hp.';
         }
 
         if (!empty($errors)) {
@@ -195,6 +200,9 @@ class OrderController extends Controller
             if (in_array('link', $methods, true)) {
                 $lines[] = 'Link: ' . $this->valueOrDash($order->fulfillment_link);
             }
+            if (in_array('phone', $methods, true)) {
+                $lines[] = 'Nomor HP: ' . $this->valueOrDash($order->fulfillment_phone);
+            }
             if ($order->fulfillment_notes) {
                 $lines[] = 'Catatan: ' . $order->fulfillment_notes;
             }
@@ -260,6 +268,7 @@ class OrderController extends Controller
             'invite' => 'Invite',
             'own_account' => 'Akun Kamu',
             'link' => 'Link',
+            'phone' => 'Nomor HP',
             default => 'Akun Admin',
         };
     }

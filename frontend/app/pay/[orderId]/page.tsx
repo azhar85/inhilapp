@@ -119,6 +119,7 @@ export default function PayPage() {
     if (method === 'invite') return 'Invite';
     if (method === 'own_account') return 'Akun Kamu';
     if (method === 'link') return 'Link';
+    if (method === 'phone') return 'Nomor HP';
     if (method === 'admin_account') return 'Akun Admin';
     return method;
   };

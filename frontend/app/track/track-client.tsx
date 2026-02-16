@@ -12,6 +12,7 @@ const METHOD_LABELS: Record<string, string> = {
   admin_account: 'Akun Admin',
   own_account: 'Akun Kamu',
   link: 'Link',
+  phone: 'Nomor HP',
 };
 
 export default function TrackClient() {
@@ -50,9 +51,6 @@ export default function TrackClient() {
       ),
     [order?.items]
   );
-  const needsFulfillmentEmail = orderMethods.includes('admin_account');
-  const needsFulfillmentPassword = orderMethods.includes('admin_account');
-  const needsFulfillmentLink = orderMethods.includes('link');
   const hasFulfillment =
     Boolean(order?.fulfillment_email) ||
     Boolean(order?.fulfillment_password) ||
@@ -236,149 +234,162 @@ export default function TrackClient() {
               </div>
             </div>
 
-            <div className="mt-5 grid gap-4 rounded-2xl border border-slate-200 bg-white/80 p-5 sm:grid-cols-2">
-              <div>
+            <div className="mt-5 space-y-3">
+              <div className="rounded-xl border border-slate-200 bg-white/80 p-4 text-sm">
                 <div className="text-xs uppercase tracking-wide text-slate-400">
                   Atas nama
                 </div>
-                <div className="mt-2 text-sm font-semibold text-ink">
-                  {order.customer_name}
-                </div>
+                <div className="mt-1 font-medium text-ink">{order.customer_name}</div>
               </div>
-              <div>
+              <div className="rounded-xl border border-slate-200 bg-white/80 p-4 text-sm">
                 <div className="text-xs uppercase tracking-wide text-slate-400">
                   WhatsApp
                 </div>
-                <div className="mt-2 text-sm font-semibold text-ink">
-                  {order.customer_whatsapp}
-                </div>
+                <div className="mt-1 font-medium text-ink">{order.customer_whatsapp}</div>
               </div>
-              <div>
+              <div className="rounded-xl border border-slate-200 bg-white/80 p-4 text-sm">
                 <div className="text-xs uppercase tracking-wide text-slate-400">
                   Tanggal Pesanan
                 </div>
-                <div className="mt-2 text-sm font-semibold text-ink">
-                  {orderDate ?? '-'}
-                </div>
+                <div className="mt-1 font-medium text-ink">{orderDate ?? '-'}</div>
               </div>
             </div>
-          </div>
 
-          <div className="rounded-2xl border border-white/60 bg-white/70 p-6 shadow-soft">
-            <div className="text-sm font-semibold text-ink">Detail Pesanan</div>
-            <div className="mt-4 space-y-3">
+            <div className="mt-5 border-t border-slate-200 pt-5">
+              <div className="space-y-3">
               {order.items.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3 text-sm last:border-b-0 last:pb-0"
+                  className="rounded-xl border border-slate-200 bg-white/80 p-4 text-sm"
                 >
-                  <div>
-                    <div className="font-medium text-ink">
-                      {item.product_name_snapshot}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Metode: {METHOD_LABELS[item.delivery_method ?? 'admin_account'] ?? item.delivery_method}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {item.qty} x {formatRupiah(item.unit_price)}
-                    </div>
-                    {(item.customer_email || item.customer_password || item.customer_note) && (
-                      <div className="mt-1 space-y-0.5 text-xs text-slate-500">
-                        {item.customer_email && <div>Email user: {item.customer_email}</div>}
-                        {item.customer_password && (
-                          <div>Password user: {item.customer_password}</div>
-                        )}
-                        {item.customer_note && (
-                          <div className="break-words">Catatan user: {item.customer_note}</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="font-semibold text-ink">
-                    {formatRupiah(item.line_total)}
+                  <div className="font-medium text-ink">{item.product_name_snapshot}</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    {item.qty} x {formatRupiah(item.unit_price)}
                   </div>
                 </div>
               ))}
-            </div>
-            {(order.voucher_discount ?? 0) > 0 && (
-              <div className="mt-2 flex items-center justify-between text-sm text-emerald-700">
-                <span>
-                  Voucher {order.voucher_code ? `(${order.voucher_code})` : ''}
-                </span>
-                <span>-{formatRupiah(order.voucher_discount ?? 0)}</span>
               </div>
-            )}
-            <div className="mt-2 flex items-center justify-between text-base font-semibold text-ink">
-              <span>Total</span>
-              <span>{formatRupiah(order.total_amount)}</span>
+              <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-base font-semibold text-ink">
+                <span>Total</span>
+                <span>{formatRupiah(order.total_amount)}</span>
+              </div>
             </div>
           </div>
 
           <div className="rounded-2xl border border-white/60 bg-white/70 p-6 shadow-soft">
-            <div className="text-sm font-semibold text-ink">DETAIL</div>
+            <div className="text-sm font-semibold text-ink">Detail Pengiriman</div>
             {(() => {
-              const hasFulfillment =
-                Boolean(order.fulfillment_email) ||
-                Boolean(order.fulfillment_password) ||
-                Boolean(order.fulfillment_link) ||
-                Boolean(order.fulfillment_notes);
-              const canShow =
-                hasFulfillment || order.status === 'DELIVERED' || order.status === 'PAID';
+              const canShow = order.status === 'DELIVERED';
 
               if (!canShow) {
                 return (
                   <p className="mt-4 text-sm text-slate-600">
-                    Detail premium akan muncul setelah pesanan diproses.
+                    Detail pengiriman akan muncul setelah status pesanan selesai.
                   </p>
                 );
               }
 
               return (
                 <div className="mt-4 space-y-3 text-sm text-slate-700">
-                  {needsFulfillmentEmail && order.fulfillment_email && (
-                    <div>
-                      <div className="text-xs uppercase tracking-wide text-slate-500">
-                        Email
+                  {order.items.map((item) => {
+                    const method = item.delivery_method ?? 'admin_account';
+                    return (
+                      <div
+                        key={`fulfillment-${item.id}`}
+                        className="rounded-xl border border-slate-200 bg-white p-4"
+                      >
+                        <div className="font-semibold text-ink">
+                          {item.product_name_snapshot} x{item.qty}
+                        </div>
+                        <div className="mt-1 text-xs uppercase tracking-wide text-slate-500">
+                          {METHOD_LABELS[method] ?? method}
+                        </div>
+                        <div className="mt-1 text-xs font-semibold text-emerald-700">
+                          Status: Selesai
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          {method === 'admin_account' && (
+                            <>
+                              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                Email akun premium
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                                {order.fulfillment_email || '-'}
+                              </div>
+                              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                Password akun premium
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                                {order.fulfillment_password || '-'}
+                              </div>
+                            </>
+                          )}
+
+                          {method === 'own_account' && (
+                            <>
+                              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                Email user
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                                {item.customer_email || '-'}
+                              </div>
+                              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                Password user
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                                {item.customer_password || '-'}
+                              </div>
+                            </>
+                          )}
+
+                          {method === 'invite' && (
+                            <>
+                              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                Email user
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                                {item.customer_email || '-'}
+                              </div>
+                            </>
+                          )}
+
+                          {method === 'link' && (
+                            <>
+                              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                Link / Invite
+                              </div>
+                              <div className="break-all rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                                {order.fulfillment_link || '-'}
+                              </div>
+                            </>
+                          )}
+
+                          {method === 'phone' && (
+                            <>
+                              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                Nomor HP
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                                {order.fulfillment_phone || '-'}
+                              </div>
+                            </>
+                          )}
+
+                        </div>
                       </div>
-                      <div className="mt-2 whitespace-pre-line rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        {order.fulfillment_email}
-                      </div>
-                    </div>
-                  )}
-                  {needsFulfillmentPassword && order.fulfillment_password && (
-                    <div>
-                      <div className="text-xs uppercase tracking-wide text-slate-500">
-                        Password
-                      </div>
-                      <div className="mt-2 whitespace-pre-line rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        {order.fulfillment_password}
-                      </div>
-                    </div>
-                  )}
-                  {needsFulfillmentLink && order.fulfillment_link && (
-                    <div>
-                      <div className="text-xs uppercase tracking-wide text-slate-500">
-                        Link / Invite
-                      </div>
-                      <div className="mt-2 break-all rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        {order.fulfillment_link}
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })}
+
                   {order.fulfillment_notes && (
                     <div>
                       <div className="text-xs uppercase tracking-wide text-slate-500">
-                        Catatan
+                        Catatan admin
                       </div>
                       <div className="mt-2 whitespace-pre-line rounded-xl border border-slate-200 bg-white px-3 py-2">
                         {order.fulfillment_notes}
                       </div>
                     </div>
-                  )}
-                  {!hasFulfillment && (
-                    <p className="text-sm text-slate-600">
-                      Detail premium belum diinput oleh admin.
-                    </p>
                   )}
                 </div>
               );

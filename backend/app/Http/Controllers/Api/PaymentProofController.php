@@ -244,6 +244,7 @@ class PaymentProofController extends Controller
             'invite' => 'Invite',
             'own_account' => 'Akun Kamu',
             'link' => 'Link',
+            'phone' => 'Nomor HP',
             default => 'Akun Admin',
         };
     }
